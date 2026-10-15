@@ -184,6 +184,19 @@ test('errors list and delete', () => {
   assert(/No errors saved/.test(e([])));
 });
 
+test('simple first request on Opus suggests Sonnet, once', () => {
+  const tr = path.join(tmp, 'empty.jsonl');
+  fs.writeFileSync(tr, '');
+  const p = (sid, prompt) => run('prompt.js', { session_id: sid, cwd: tmp, transcript_path: tr, prompt });
+  run('session-start.js', { session_id: 'm1', cwd: tmp, source: 'startup', model: 'claude-opus-5-5' });
+  assert(/\/model sonnet/.test(p('m1', 'come mai le icone del desktop si sono spostate?').systemMessage));
+  assert.strictEqual(p('m1', 'e quelle a sinistra?'), null);
+  run('session-start.js', { session_id: 'm2', cwd: tmp, source: 'startup', model: 'claude-opus-5-5' });
+  assert.strictEqual(p('m2', 'aggiungi il loop detector al plugin'), null);
+  run('session-start.js', { session_id: 'm3', cwd: tmp, source: 'startup', model: 'claude-sonnet-5-5' });
+  assert.strictEqual(p('m3', 'che ore sono a Tokyo?'), null);
+});
+
 test('report adds up savings and takes back overrides', () => {
   const o = execFileSync('node', [path.join(root, 'scripts', 'report.js')], { env }).toString();
   assert(/Total/.test(o) && /Restarts with handoff: 1/.test(o));

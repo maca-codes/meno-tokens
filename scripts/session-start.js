@@ -14,6 +14,13 @@ const source = input.source || 'startup';
 if (source === 'clear' || source === 'compact') lib.resetState(input);
 if (source !== 'clear' && source !== 'startup') lib.out(null);
 
+// Remembered for prompt.js, which suggests a lighter model for a simple first request.
+if (input.model) {
+  const st = lib.loadState(input);
+  st.model = String(typeof input.model === 'object' ? input.model.id || '' : input.model);
+  lib.saveState(input, st);
+}
+
 const cwd = input.cwd || process.cwd();
 const file = lib.handoffFile(cwd);
 let text, s;

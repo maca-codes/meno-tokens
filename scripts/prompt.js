@@ -35,9 +35,34 @@ const MSG = {
     'To restart light: /token-diet:handoff, then /clear.',
 };
 
+// First request of a session on Opus that looks simple (short question, nothing to
+// build or fix): suggest Sonnet. Only once and only at the start, because switching
+// model later re-sends the whole context without cache and costs more.
+const MODEL_MSG = {
+  it: 'token-diet: richiesta semplice. Se la sessione resta su cose così, passa ora a Sonnet con /model sonnet: ' +
+    'costa meno. Più avanti conviene meno, perché il cambio fa ricaricare tutto il contesto. Per lavori complessi torna a Opus.',
+  en: 'token-diet: simple request. If this session stays on things like this, switch to Sonnet now with /model sonnet: ' +
+    'it costs less. Later it pays off less, because switching re-sends the whole context. Go back to Opus for complex work.',
+};
+const BUILD = /```|implement|crea|costruis|svilupp|aggiung|modific|refactor|riscriv|debug|bug|error|non funziona|progett|plugin|sito|app\b|gioco|migr|deploy|build|test|codice|script|funzion|feature|create|develop|\badd\b|rewrite|\bfix|project|website|\bcode/i;
+
+function simplePrompt(p) {
+  p = String(p || '').trim();
+  return p.length > 0 && p.length <= 300 && !p.startsWith('/') && !BUILD.test(p);
+}
+
 const input = lib.readStdin();
 const cfg = lib.config();
 const used = contextTokens(input.transcript_path);
+
+if (!used && cfg.modelHint) {
+  const st = lib.loadState(input);
+  if (!st.modelHinted && /opus/i.test(st.model || '')) {
+    st.modelHinted = true;
+    lib.saveState(input, st);
+    if (simplePrompt(input.prompt)) lib.out({ systemMessage: MODEL_MSG[cfg.lang] || MODEL_MSG.en });
+  }
+}
 if (!used) lib.out(null);
 
 // Remembered so session-start.js can measure what a handoff saved.
