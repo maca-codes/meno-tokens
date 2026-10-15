@@ -43,6 +43,22 @@ test('"# full" comment skips trimming', () => {
   assert.strictEqual(run('post-tool.js', Object.assign({}, S, { tool_name: 'Bash', tool_input: { command: 'cat x # full' }, tool_response: { stdout: big, stderr: '' } })), null);
 });
 
+test('neverTrim folders are never trimmed or blocked (Windows and Git Bash paths)', () => {
+  const dataDir = path.join(tmp, 'data');
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({ neverTrim: [tmp] }));
+  try {
+    const gitBash = tmp.replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, d) => '/' + d.toLowerCase());
+    for (const command of [`cat "${path.join(tmp, 'notes.md')}"`, `cd "${gitBash}" && cat notes.md`]) {
+      assert.strictEqual(run('post-tool.js', Object.assign({}, S, { tool_name: 'Bash', tool_input: { command }, tool_response: { stdout: big, stderr: '' } })), null);
+    }
+    assert.strictEqual(run('pre-tool.js', Object.assign({}, S, { session_id: 'nt', tool_name: 'Read', tool_input: { file_path: bigFile } })), null);
+    assert(run('post-tool.js', Object.assign({}, S, { tool_name: 'Bash', tool_use_id: 'tu9', tool_input: { command: 'cat /elsewhere/x' }, tool_response: { stdout: big, stderr: '' } })));
+  } finally {
+    fs.unlinkSync(path.join(dataDir, 'config.json'));
+  }
+});
+
 test('minified single long line is cut', () => {
   const line = 'x'.repeat(20000);
   const r = run('post-tool.js', Object.assign({}, S, { tool_name: 'Bash', tool_use_id: 'tu2', tool_input: { command: 'x' }, tool_response: { stdout: line, stderr: '' } }));

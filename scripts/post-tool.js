@@ -94,7 +94,7 @@ if ((tool === 'Bash' || tool === 'PowerShell') && res && !res.isImage) {
   const so = String(res.stdout || ''), se = String(res.stderr || '');
   // Only outputs that report a problem: a build that keeps succeeding is not a loop.
   const loop = KEY_LINE.test(so + se) ? lib.checkLoop(input, `${tool}\n${cmd}\n${so}\n${se}`) : null;
-  if (wantsFull(cmd)) lib.out(withLoop(null, loop));
+  if (wantsFull(cmd) || lib.isProtected(cmd, cfg)) lib.out(withLoop(null, loop));
   const tso = trim(so, cfg), tse = trim(se, cfg);
   if (tso === null && tse === null) lib.out(withLoop(null, loop));
   const file = saveFull(input, so + (se ? '\n--- stderr ---\n' + se : ''));
@@ -110,7 +110,7 @@ if ((tool === 'Bash' || tool === 'PowerShell') && res && !res.isImage) {
   }, loop));
 }
 
-if (tool === 'Grep' && res && typeof res.content === 'string') {
+if (tool === 'Grep' && res && typeof res.content === 'string' && !lib.isProtected(input.tool_input && input.tool_input.path, cfg)) {
   const t = trim(res.content, cfg);
   if (t === null) lib.out(null);
   const file = saveFull(input, res.content);

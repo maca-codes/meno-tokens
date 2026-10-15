@@ -14,7 +14,7 @@ if (input.tool_name !== 'Read') lib.out(null);
 const cfg = lib.config();
 const ti = input.tool_input || {};
 const p = lib.resolvePath(ti.file_path, input.cwd);
-if (!p || SKIP_EXT.test(p)) lib.out(null);
+if (!p || SKIP_EXT.test(p) || lib.isProtected(p, cfg)) lib.out(null);
 
 let s;
 try { s = fs.statSync(p); } catch { lib.out(null); }

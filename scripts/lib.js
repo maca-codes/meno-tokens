@@ -19,6 +19,7 @@ const DEFAULTS = {
   hygieneExtraFiles: [],      // more files read at every session start, measured by /token-diet:hygiene
   modelHint: true,           // suggest Sonnet when the first request on Opus looks simple
   loopAfter: 3,              // same failure (or same command + output) this many times = loop
+  neverTrim: [],             // folders ("~" allowed) whose files are never trimmed or blocked, e.g. notes read at startup
 };
 
 function dataDir() {
@@ -102,6 +103,23 @@ function resolvePath(p, cwd) {
   return path.isAbsolute(p) ? path.normalize(p) : path.resolve(cwd || process.cwd(), p);
 }
 
+// Paths compared lowercase with forward slashes; Git Bash "/c/..." becomes "c:/...".
+function normPath(p) {
+  let s = String(p || '').replace(/\\/g, '/').toLowerCase();
+  s = s.replace(/(^|[\s"'=(])\/([a-z])\//g, '$1$2:/');
+  return s;
+}
+
+// True when the text (a path or a whole shell command) mentions a neverTrim folder.
+function isProtected(text, cfg) {
+  const t = normPath(text);
+  if (!t) return false;
+  return (cfg.neverTrim || []).some((dir) => {
+    const d = normPath(String(dir).replace(/^~(?=$|[\\/])/, os.homedir())).replace(/\/+$/, '');
+    return d.length > 0 && t.includes(d);
+  });
+}
+
 // Loop detection: counts identical outcomes (same failure, or same command with the
 // same output) per session. Numbers are masked so timestamps, PIDs and line counts
 // do not hide a repeat. Returns a note for the model every loopAfter repeats.
@@ -128,7 +146,7 @@ function checkLoop(input, sig) {
   };
 }
 
-module.exports = { config, dataDir, readStdin, out, tokens, logEvent, loadState, saveState, resetState, hash, resolvePath, checkLoop };
+module.exports = { config, dataDir, readStdin, out, tokens, logEvent, loadState, saveState, resetState, hash, resolvePath, checkLoop, isProtected };
 
 // Handoff notes live outside the project, so a cloned repo cannot ship one that
 // gets loaded as trusted context. Fixed location (not CLAUDE_PLUGIN_DATA) because

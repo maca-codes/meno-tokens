@@ -49,11 +49,14 @@ Create `config.json` in the plugin data folder (`~/.claude/plugins/data/token-di
   "contextWarnAt": [80000, 150000, 250000, 400000],
   "loopAfter": 3,
   "modelHint": true,
-  "hygieneExtraFiles": []
+  "hygieneExtraFiles": [],
+  "neverTrim": []
 }
 ```
 
 To keep a single command's output untouched, end the command with `# full`.
+
+`neverTrim` lists folders (`~` allowed) that are never trimmed or blocked: files there are read whole, and a shell command or Grep that mentions the folder keeps its full output. Use it for notes Claude must read in full, e.g. files loaded at every session start. Windows and Git Bash forms of the same path (`C:\...`, `/c/...`) both match.
 
 ## Works well with
 
