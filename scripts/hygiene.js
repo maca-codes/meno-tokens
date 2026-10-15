@@ -26,8 +26,16 @@ const short = (f) => f.replace(HOME, '~');
 // ---- 1. Instruction files ----
 const instr = [];
 const seen = new Set();
-function addFile(f, kind, depth) {
+const inside = (p, root) => {
+  const r = path.relative(root, p);
+  return r && !r.startsWith('..') && !path.isAbsolute(r);
+};
+// root: where imports of this file may point. User files (~/.claude, config) are
+// trusted; a project file (maybe from a cloned repo) only imports from its own folder
+// or ~/.claude, so it cannot make the analysis step read files elsewhere.
+function addFile(f, kind, depth, root) {
   f = path.resolve(f);
+  if (root && !inside(f, root) && !inside(f, CLAUDE)) return;
   if (seen.has(f.toLowerCase())) return;
   const s = read(f);
   if (s === null) return;
@@ -38,15 +46,15 @@ function addFile(f, kind, depth) {
   const body = s.replace(/```[\s\S]*?```/g, '');
   for (const m of body.matchAll(/(?:^|\s)@([~\w./\\-]+\.md)\b/g)) {
     const p = m[1].startsWith('~') ? path.join(HOME, m[1].slice(1)) : path.resolve(path.dirname(f), m[1]);
-    addFile(p, t('importato', 'imported'), (depth || 0) + 1);
+    addFile(p, t('importato', 'imported'), (depth || 0) + 1, root);
   }
 }
 addFile(path.join(CLAUDE, 'CLAUDE.md'), t('globale', 'global'));
 for (const f of ls(path.join(CLAUDE, 'rules'))) if (f.endsWith('.md')) addFile(path.join(CLAUDE, 'rules', f), 'rule');
 for (let d = cwd, prev = ''; d !== prev; prev = d, d = path.dirname(d)) {
-  for (const n of ['CLAUDE.md', path.join('.claude', 'CLAUDE.md'), 'CLAUDE.local.md']) addFile(path.join(d, n), t('progetto', 'project'));
+  for (const n of ['CLAUDE.md', path.join('.claude', 'CLAUDE.md'), 'CLAUDE.local.md']) addFile(path.join(d, n), t('progetto', 'project'), 0, d);
 }
-for (const f of ls(path.join(cwd, '.claude', 'rules'))) if (f.endsWith('.md')) addFile(path.join(cwd, '.claude', 'rules', f), 'rule');
+for (const f of ls(path.join(cwd, '.claude', 'rules'))) if (f.endsWith('.md')) addFile(path.join(cwd, '.claude', 'rules', f), 'rule', 0, cwd);
 addFile(path.join(CLAUDE, 'projects', cwd.replace(/[^A-Za-z0-9]/g, '-'), 'memory', 'MEMORY.md'), t('memoria', 'memory'));
 for (const f of cfg.hygieneExtraFiles || []) addFile(f.replace(/^~/, HOME), t('extra', 'extra'));
 

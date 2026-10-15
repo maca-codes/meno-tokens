@@ -203,12 +203,14 @@ test('hygiene measures instructions, imports, skills, usage and duplicates', () 
   const w = (f, s) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, s); };
   w(path.join(C, 'CLAUDE.md'), '@RULES.md\n' + dup);
   w(path.join(C, 'RULES.md'), 'x'.repeat(400));
-  w(path.join(proj, 'CLAUDE.md'), '- ' + dup);
+  w(path.join(proj, 'CLAUDE.md'), '- ' + dup + '\n@../secret.md');
+  w(path.join(tmp, 'secret.md'), 'not part of the project');
   w(path.join(C, 'skills', 'used', 'SKILL.md'), '---\nname: used\ndescription: >-\n  A skill that\n  spans lines\n---\n');
   w(path.join(C, 'skills', 'idle', 'SKILL.md'), '---\nname: idle\ndescription: never called\n---\n');
   w(path.join(C, 'projects', 'p', 's.jsonl'), '{"type":"tool_use","id":"x","name":"Skill","input":{"skill":"used"}}\n');
   const o = execFileSync('node', [path.join(root, 'scripts', 'hygiene.js'), '30'], { cwd: proj, env: Object.assign({}, env, { TOKEN_DIET_HOME: H }) }).toString();
   assert(/RULES\.md/.test(o), 'imported file measured');
+  assert(!/secret\.md/.test(o), 'project file cannot import from outside the project');
   assert(/used\s+\d+\s+used 1x/.test(o) && /idle\s+\d+\s+never used/.test(o));
   assert(/Duplicate lines across instruction files: 1/.test(o));
   assert(!/used\s+[0-3]\s/.test(o), 'multi-line description read');
