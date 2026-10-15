@@ -92,3 +92,16 @@ function resolvePath(p, cwd) {
 }
 
 module.exports = { config, dataDir, readStdin, out, tokens, logEvent, loadState, saveState, resetState, hash, resolvePath };
+
+// Handoff notes live outside the project, so a cloned repo cannot ship one that
+// gets loaded as trusted context. Fixed location (not CLAUDE_PLUGIN_DATA) because
+// the skill that writes the note and the hook that reads it see different env.
+function handoffFile(cwd) {
+  let key = path.resolve(cwd || process.cwd());
+  if (process.platform === 'win32') key = key.toLowerCase();
+  const dir = path.join(os.homedir(), '.claude', 'token-diet', 'handoff');
+  fs.mkdirSync(dir, { recursive: true });
+  return path.join(dir, hash(key) + '.md');
+}
+
+module.exports.handoffFile = handoffFile;

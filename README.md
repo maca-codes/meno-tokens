@@ -12,7 +12,7 @@ Every message you send re-sends the whole conversation. A session that grows to 
 | Big file reads | When the model reads a whole file of 400+ lines, it is asked to Grep or read a range first. | If the model repeats the same call, the read goes through. It is never stuck. |
 | Re-reads | Stops reading a file again when it is unchanged and already in context. | Edits, `/clear` and compaction reset this. Subagents are tracked separately. |
 | Heavy sessions | Warns you at 80k, 150k, 250k and 400k tokens of context. | The warning goes to you, not to the model, so it costs no tokens. |
-| Restart light | `/token-diet:handoff` writes a short note in `.claude/handoff.md`. After `/clear`, the new session loads it automatically. | You continue with a few hundred tokens instead of the whole old context. |
+| Restart light | `/token-diet:handoff` writes a short note (stored in `~/.claude/token-diet/`, never in the repo). After `/clear`, the new session loads it automatically. | You continue with a few hundred tokens instead of the whole old context. |
 | Proof | `/token-diet:report [days]` shows the savings per day. | Reads the model insisted on are subtracted, so the number is not inflated. |
 
 Every intervention is logged. Nothing is sent anywhere.

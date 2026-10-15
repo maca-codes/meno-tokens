@@ -2,9 +2,14 @@
 name: handoff
 description: Write a short handoff note so the user can /clear and continue in a light session.
 disable-model-invocation: true
+allowed-tools: Bash(node:*)
 ---
 
-Write the file `.claude/handoff.md` in the current project folder (create `.claude/` if missing). The next session loads it automatically after `/clear`, so it must let a fresh session continue the work with no other context.
+Write the handoff note to this exact file (use the Write tool):
+
+!`node "${CLAUDE_SKILL_DIR}/../../scripts/handoff-path.js"`
+
+The next session in this folder loads it automatically after `/clear`, so it must let a fresh session continue the work with no other context.
 
 Rules:
 - 40 lines at most. Facts only, no narration of what was done step by step.

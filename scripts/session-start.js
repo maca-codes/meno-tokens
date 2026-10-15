@@ -1,6 +1,6 @@
 // SessionStart: after /clear or compaction the earlier reads are gone from context,
 // so the re-read guard forgets them. On a fresh start it loads the handoff note
-// written by /token-diet:handoff, so the new session continues with a few hundred
+// written by /token-diet:handoff (stored outside the project), so the new session continues with a few hundred
 // tokens instead of the whole old context.
 'use strict';
 const fs = require('fs');
@@ -15,12 +15,14 @@ if (source === 'clear' || source === 'compact') lib.resetState(input);
 if (source !== 'clear' && source !== 'startup') lib.out(null);
 
 const cwd = input.cwd || process.cwd();
-const file = path.join(cwd, '.claude', 'handoff.md');
+const file = lib.handoffFile(cwd);
 let text, s;
-try { s = fs.statSync(file); text = fs.readFileSync(file, 'utf8'); } catch { lib.out(null); }
+try { s = fs.lstatSync(file); } catch { lib.out(null); }
+if (!s.isFile() || s.size > 64 * 1024) lib.out(null); // no symlinks, no oversized notes
 if (Date.now() - s.mtimeMs > cfg.handoffMaxAgeHours * 3600e3) lib.out(null);
+try { text = fs.readFileSync(file, 'utf8'); } catch { lib.out(null); }
 
-try { fs.renameSync(file, path.join(cwd, '.claude', 'handoff.used.md')); } catch {}
+try { fs.renameSync(file, file.replace(/\.md$/,'.used.md')); } catch {}
 
 let before = 0;
 try { before = JSON.parse(fs.readFileSync(path.join(lib.dataDir(), 'lastctx-' + lib.hash(cwd) + '.json'), 'utf8')).used; } catch {}
