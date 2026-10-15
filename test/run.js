@@ -116,9 +116,39 @@ test('a handoff.md shipped inside a repo is ignored', () => {
   assert.strictEqual(run('session-start.js', { session_id: 's5', cwd: repo, source: 'startup' }), null);
 });
 
+const fail = (error, tool_input, extra) => Object.assign({ session_id: 's6', cwd: tmp, tool_name: 'Bash', tool_input, error }, extra);
+const longErr = 'Exit code 1\nTypeError: Cannot read properties of undefined (reading "map") at app.js:12:5';
+
+test('same failure 3 times is flagged as a loop, numbers ignored', () => {
+  assert.strictEqual(run('failure.js', fail(longErr, { command: 'npm test' })), null);
+  assert.strictEqual(run('failure.js', fail(longErr.replace('12:5', '13:7'), { command: 'npm test -- --x' })), null);
+  const r = run('failure.js', fail(longErr, { command: 'npm test' }));
+  assert(/change strategy/.test(r.hookSpecificOutput.additionalContext));
+  assert(/3 times/.test(r.systemMessage));
+  assert.strictEqual(run('failure.js', fail(longErr, { command: 'npm test' })), null);
+});
+
+test('generic failures with different inputs are not a loop', () => {
+  for (const p of ['a', 'b', 'c', 'd']) assert.strictEqual(run('failure.js', fail('Exit code 1', { command: 'grep ' + p })), null);
+});
+
+test('interrupted calls are ignored', () => {
+  for (let i = 0; i < 3; i++) assert.strictEqual(run('failure.js', fail(longErr, {}, { is_interrupt: true, session_id: 's7' })), null);
+});
+
+test('same command with the same error output 3 times is a loop; clean output is not', () => {
+  const bash = (stdout) => ({ session_id: 's8', cwd: tmp, tool_name: 'Bash', tool_input: { command: 'build' }, tool_response: { stdout, stderr: '' } });
+  for (let i = 0; i < 3; i++) assert.strictEqual(run('post-tool.js', bash(`Compiled in ${i}ms`)), null);
+  run('post-tool.js', bash('ERROR x'));
+  run('post-tool.js', bash('ERROR x'));
+  const r = run('post-tool.js', bash('ERROR x'));
+  assert(/change strategy/.test(r.hookSpecificOutput.additionalContext));
+});
+
 test('report adds up savings and takes back overrides', () => {
   const o = execFileSync('node', [path.join(root, 'scripts', 'report.js')], { env }).toString();
   assert(/Total/.test(o) && /Restarts with handoff: 1/.test(o));
+  assert(/Loops stopped/.test(o));
 });
 
 console.log(`\n${n} tests passed`);

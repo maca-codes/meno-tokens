@@ -16,6 +16,7 @@ const DEFAULTS = {
   readMaxBytes: 40000,
   contextWarnAt: [80000, 150000, 250000, 400000],
   handoffMaxAgeHours: 48,
+  loopAfter: 3,               // same failure (or same command + output) this many times = loop
 };
 
 function dataDir() {
@@ -91,7 +92,33 @@ function resolvePath(p, cwd) {
   return path.isAbsolute(p) ? path.normalize(p) : path.resolve(cwd || process.cwd(), p);
 }
 
-module.exports = { config, dataDir, readStdin, out, tokens, logEvent, loadState, saveState, resetState, hash, resolvePath };
+// Loop detection: counts identical outcomes (same failure, or same command with the
+// same output) per session. Numbers are masked so timestamps, PIDs and line counts
+// do not hide a repeat. Returns a note for the model every loopAfter repeats.
+const LOOP_MSG = {
+  it: (n) => `[token-diet] Claude ha ottenuto lo stesso risultato ${n} volte: gli ho chiesto di cambiare strategia.`,
+  en: (n) => `[token-diet] Claude got the same result ${n} times: asked it to change strategy.`,
+};
+
+function checkLoop(input, sig) {
+  const cfg = config();
+  const key = hash(sig.replace(/\d+/g, '#').slice(0, 4000));
+  const st = loadState(input);
+  st.loops = st.loops || {};
+  const n = (st.loops[key] || 0) + 1;
+  st.loops[key] = n;
+  saveState(input, st);
+  if (n < cfg.loopAfter || n % cfg.loopAfter) return null;
+  logEvent(input, 'loop', 0, { tool: input.tool_name, repeats: n });
+  return {
+    model: `[token-diet] This is the ${n}th time this ${input.tool_name} call ends with the same result. ` +
+      'Retrying the same approach is not working. Stop and change strategy: re-read the error, ' +
+      'check your assumptions, try a different method, or ask the user.',
+    user: (LOOP_MSG[cfg.lang] || LOOP_MSG.en)(n),
+  };
+}
+
+module.exports = { config, dataDir, readStdin, out, tokens, logEvent, loadState, saveState, resetState, hash, resolvePath, checkLoop };
 
 // Handoff notes live outside the project, so a cloned repo cannot ship one that
 // gets loaded as trusted context. Fixed location (not CLAUDE_PLUGIN_DATA) because

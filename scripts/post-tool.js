@@ -1,6 +1,7 @@
 // PostToolUse: trims long Bash/PowerShell/Grep output before it reaches the model,
 // keeping head, tail and error lines. The full output is saved to a file the model can open.
-// Also records successful Reads so pre-tool.js can spot re-reads of unchanged files.
+// Also records successful Reads so pre-tool.js can spot re-reads of unchanged files,
+// and flags a shell command that keeps returning the same output (loop).
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -75,21 +76,34 @@ if (tool === 'Read') {
   lib.out(null);
 }
 
-if ((tool === 'Bash' || tool === 'PowerShell') && res && !res.isImage && !wantsFull(input.tool_input && input.tool_input.command)) {
+// Same command with the same output again and again: the model is looping.
+function withLoop(obj, loop) {
+  if (!loop) return obj;
+  obj = obj || { hookSpecificOutput: { hookEventName: 'PostToolUse' } };
+  obj.hookSpecificOutput.additionalContext = loop.model;
+  obj.systemMessage = loop.user;
+  return obj;
+}
+
+if ((tool === 'Bash' || tool === 'PowerShell') && res && !res.isImage) {
+  const cmd = String((input.tool_input && input.tool_input.command) || '');
   const so = String(res.stdout || ''), se = String(res.stderr || '');
+  // Only outputs that report a problem: a build that keeps succeeding is not a loop.
+  const loop = KEY_LINE.test(so + se) ? lib.checkLoop(input, `${tool}\n${cmd}\n${so}\n${se}`) : null;
+  if (wantsFull(cmd)) lib.out(withLoop(null, loop));
   const tso = trim(so, cfg), tse = trim(se, cfg);
-  if (tso === null && tse === null) lib.out(null);
+  if (tso === null && tse === null) lib.out(withLoop(null, loop));
   const file = saveFull(input, so + (se ? '\n--- stderr ---\n' + se : ''));
   const before = so.length + se.length;
   const nso = tso === null ? so : tso, nse = tse === null ? se : tse;
   const n = note(file, before, nso.length + nse.length);
   lib.logEvent(input, 'trim', before - nso.length - nse.length, { tool });
-  lib.out({
+  lib.out(withLoop({
     hookSpecificOutput: {
       hookEventName: 'PostToolUse',
       updatedToolOutput: Object.assign({}, res, tso !== null ? { stdout: nso + n } : { stdout: nso }, { stderr: tso === null ? nse + n : nse }),
     },
-  });
+  }, loop));
 }
 
 if (tool === 'Grep' && res && typeof res.content === 'string') {
