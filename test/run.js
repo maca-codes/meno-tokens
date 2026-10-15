@@ -73,34 +73,81 @@ test('long Grep content is trimmed', () => {
   assert.strictEqual(o.mode, 'content');
 });
 
-const read = (extra) => Object.assign({}, S, { tool_name: 'Read', tool_input: Object.assign({ file_path: bigFile }, extra) });
+const read = (extra, sid) => Object.assign({}, S, { session_id: sid || 's1', tool_name: 'Read', tool_input: Object.assign({ file_path: bigFile }, extra) });
 
 test('whole read of big file is denied once, then allowed', () => {
-  const r = run('pre-tool.js', read({}));
+  const r = run('pre-tool.js', read({}, 'r1'));
   assert.strictEqual(r.hookSpecificOutput.permissionDecision, 'deny');
-  assert.strictEqual(run('pre-tool.js', read({})), null);
+  assert.strictEqual(run('pre-tool.js', read({}, 'r1')), null);
 });
 
 test('ranged read is allowed', () => {
-  assert.strictEqual(run('pre-tool.js', read({ offset: 1, limit: 50 })), null);
+  assert.strictEqual(run('pre-tool.js', read({ offset: 1, limit: 50 }, 'r2')), null);
 });
 
 test('re-read of unchanged range is denied once; other ranges pass', () => {
-  run('post-tool.js', read({ offset: 10, limit: 100 }));
-  assert.strictEqual(run('pre-tool.js', read({ offset: 20, limit: 10 })).hookSpecificOutput.permissionDecision, 'deny');
-  assert.strictEqual(run('pre-tool.js', read({ offset: 20, limit: 10 })), null);
-  assert.strictEqual(run('pre-tool.js', read({ offset: 500, limit: 10 })), null);
+  assert.strictEqual(run('pre-tool.js', read({ offset: 10, limit: 100 }, 'r3')), null);
+  assert.strictEqual(run('pre-tool.js', read({ offset: 20, limit: 10 }, 'r3')).hookSpecificOutput.permissionDecision, 'deny');
+  assert.strictEqual(run('pre-tool.js', read({ offset: 20, limit: 10 }, 'r3')), null);
+  assert.strictEqual(run('pre-tool.js', read({ offset: 500, limit: 10 }, 'r3')), null);
+});
+
+test('a whole read covers 2000 lines only: later parts of a long file are not "already read"', () => {
+  run('pre-tool.js', read({}, 'r4'));
+  run('pre-tool.js', read({}, 'r4'));                                    // override: whole read goes through
+  assert.strictEqual(run('pre-tool.js', read({ offset: 2500, limit: 100 }, 'r4')), null);
+  assert.strictEqual(run('pre-tool.js', read({ offset: 100, limit: 50 }, 'r4')).hookSpecificOutput.permissionDecision, 'deny');
 });
 
 test('re-read after the file changed is allowed', () => {
-  run('post-tool.js', read({ offset: 1, limit: 5 }));
+  run('pre-tool.js', read({ offset: 1, limit: 5 }, 'r5'));
   fs.appendFileSync(bigFile, '\nmore');
-  assert.strictEqual(run('pre-tool.js', read({ offset: 1, limit: 5 })), null);
+  assert.strictEqual(run('pre-tool.js', read({ offset: 1, limit: 5 }, 'r5')), null);
 });
 
 test('subagent reads do not count for the main thread', () => {
-  run('post-tool.js', Object.assign(read({ offset: 1, limit: 7 }), { agent_id: 'sub1' }));
-  assert.strictEqual(run('pre-tool.js', read({ offset: 1, limit: 7 })), null);
+  run('pre-tool.js', Object.assign(read({ offset: 1, limit: 7 }, 'r6'), { agent_id: 'sub1' }));
+  assert.strictEqual(run('pre-tool.js', read({ offset: 1, limit: 7 }, 'r6')), null);
+});
+
+const bash = (sid, command, stdout, id) => run('post-tool.js', { session_id: sid, cwd: tmp, tool_name: 'Bash', tool_use_id: id,
+  tool_input: { command }, tool_response: { stdout, stderr: '' } });
+
+test('a file listing is summarised by folder, so the middle is not lost', () => {
+  const list = [];
+  for (let d = 0; d < 40; d++) for (let f = 0; f < 30; f++) list.push(`./src/dir${d}/file${f}.js`);
+  const o = bash('l1', 'find . -name "*.js"', list.join('\n'), 'tl1').hookSpecificOutput.updatedToolOutput.stdout;
+  assert(/1200 entries in 40 folders/.test(o));
+  assert(o.includes('./src/dir20/ (30)'), 'a folder from the middle is listed');
+});
+
+test('JSON is summarised by structure', () => {
+  const j = JSON.stringify({ items: Array.from({ length: 500 }, (_, i) => ({ id: i, name: 'item ' + i, tags: ['a', 'b'] })), total: 500 });
+  const o = bash('j1', 'gh api x', j, 'tj1').hookSpecificOutput.updatedToolOutput.stdout;
+  assert(/items: array\[500\]/.test(o) && /total: 500/.test(o));
+});
+
+test('a diff keeps the list of every changed file', () => {
+  let d = '';
+  for (let i = 0; i < 30; i++) d += `diff --git a/f${i}.js b/f${i}.js\n--- a/f${i}.js\n+++ b/f${i}.js\n@@ -1 +1 @@\n` + '-old line\n+new line\n'.repeat(40);
+  const o = bash('d1', 'git diff', d, 'td1').hookSpecificOutput.updatedToolOutput.stdout;
+  assert(/diff of 30 files/.test(o) && o.includes('f29.js  +40 -40'));
+});
+
+test('reading a saved output again is not trimmed and takes the saving back', () => {
+  const o = bash('b1', 'x', big, 'tb1').hookSpecificOutput.updatedToolOutput.stdout;
+  const file = o.match(/Full output: (.+?) \(/)[1];
+  assert.strictEqual(bash('b1', `cat "${file}"`, big, 'tb2'), null);
+  const ev = fs.readFileSync(path.join(tmp, 'data', 'events.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert(ev.some((e) => e.kind === 'readback' && e.sid === 'b1' && e.saved < 0));
+  assert.strictEqual(run('pre-tool.js', { session_id: 'b1', cwd: tmp, tool_name: 'Read', tool_input: { file_path: file } }), null, 'saved outputs are never blocked');
+});
+
+test('saved outputs have secrets masked', () => {
+  const secretOut = 'TOKEN=abc123secret\nAuthorization: Bearer eyJhbGciOiJIUzI1NiJ9.payloadpayload.signature\n' + big;
+  const o = bash('k1', 'env', secretOut, 'tk1').hookSpecificOutput.updatedToolOutput.stdout;
+  const saved = fs.readFileSync(o.match(/Full output: (.+?) \(/)[1], 'utf8');
+  assert(!saved.includes('abc123secret') && !saved.includes('payloadpayload'));
 });
 
 test('context warning fires once per threshold', () => {
@@ -152,13 +199,22 @@ test('interrupted calls are ignored', () => {
   for (let i = 0; i < 3; i++) assert.strictEqual(run('failure.js', fail(longErr, {}, { is_interrupt: true, session_id: 's7' })), null);
 });
 
-test('same command with the same error output 3 times is a loop; clean output is not', () => {
-  const bash = (stdout) => ({ session_id: 's8', cwd: tmp, tool_name: 'Bash', tool_input: { command: 'build' }, tool_response: { stdout, stderr: '' } });
-  for (let i = 0; i < 3; i++) assert.strictEqual(run('post-tool.js', bash(`Compiled in ${i}ms`)), null);
-  run('post-tool.js', bash('ERROR x'));
-  run('post-tool.js', bash('ERROR x'));
-  const r = run('post-tool.js', bash('ERROR x'));
+test('same command with the same error output 3 times in a row is a loop; clean output is not', () => {
+  const b = (stdout) => bash('s8', 'build', stdout);
+  for (let i = 0; i < 3; i++) assert.strictEqual(b(`Compiled in ${i}ms`), null);
+  b('ERROR x');
+  b('ERROR x');
+  const r = b('ERROR x');
   assert(/change strategy/.test(r.hookSpecificOutput.additionalContext));
+});
+
+test('a clean result in between resets the count; "0 failed" is not a problem', () => {
+  const b = (stdout) => bash('s9', 'npm test', stdout);
+  b('ERROR x');
+  b('ERROR x');
+  assert.strictEqual(b('Tests: 12 passed, 0 failed'), null);
+  assert.strictEqual(b('ERROR x'), null, 'the streak restarted');
+  for (let i = 0; i < 4; i++) assert.strictEqual(b('Tests: 12 passed, 0 failed, warnings: 0'), null);
 });
 
 const modErr = "Exit code 1\nError: Cannot find module 'sharp'\nRequire stack:\n- C:\\proj\\a\\node_modules\\next\\dist\\x.js";
@@ -193,10 +249,33 @@ test('generic errors and fixes with too many steps are not saved', () => {
   assert.strictEqual(saved.length, 1);
 });
 
+test('secrets are masked in the error memory; look-only commands are not fix steps', () => {
+  const D = path.join(tmp, 'D');
+  const err = 'Exit code 1\nError: connection refused by the remote database server at port';
+  run('failure.js', { session_id: 'e4', cwd: D, tool_name: 'Bash', tool_input: { command: 'deploy now' }, error: err });
+  ok('e4', D, 'Bash', { command: 'git status' });
+  ok('e4', D, 'Bash', { command: 'mysql -pS3cretPass -e "select 1"' });
+  ok('e4', D, 'Bash', { command: 'deploy now' });
+  const saved = JSON.parse(fs.readFileSync(path.join(tmp, 'errors.json'), 'utf8')).pop();
+  assert.deepStrictEqual(saved.steps, ['ran `mysql -p*** -e "select 1"`']);
+});
+
+test('an unreadable error memory is never overwritten', () => {
+  const f = path.join(tmp, 'errors.json');
+  const keep = fs.readFileSync(f, 'utf8');
+  fs.writeFileSync(f, '{"broken": ');
+  run('failure.js', { session_id: 'e5', cwd: tmp, tool_name: 'Bash', tool_input: { command: 'make x' }, error: modErr });
+  ok('e5', tmp, 'Bash', { command: 'npm install sharp' });
+  ok('e5', tmp, 'Bash', { command: 'make x' });
+  assert.strictEqual(fs.readFileSync(f, 'utf8'), '{"broken": ');
+  fs.writeFileSync(f, keep);
+});
+
 test('errors list and delete', () => {
   const e = (a) => execFileSync('node', [path.join(root, 'scripts', 'errors.js'), ...a], { env }).toString();
   assert(/PowerWash/.test(e([])) && /npm install sharp/.test(e([])));
   assert(/Deleted error 1/.test(e(['delete', '1'])));
+  e(['delete', '1']);
   assert(/No errors saved/.test(e([])));
 });
 
@@ -232,10 +311,40 @@ test('hygiene measures instructions, imports, skills, usage and duplicates', () 
   assert(!/used\s+[0-3]\s/.test(o), 'multi-line description read');
 });
 
-test('report adds up savings and takes back overrides', () => {
+test('a long pause warns the user that the cache expired', () => {
+  const tr = path.join(tmp, 't2.jsonl');
+  fs.writeFileSync(tr, JSON.stringify({ type: 'assistant', message: { usage: { input_tokens: 5, cache_read_input_tokens: 60000 } } }) + '\n');
+  const inp = { session_id: 'c1', cwd: tmp, transcript_path: tr };
+  assert.strictEqual(run('prompt.js', inp), null);
+  const sf = path.join(tmp, 'data', 'sessions', 'c1.json');
+  const st = JSON.parse(fs.readFileSync(sf, 'utf8'));
+  st.lastPrompt -= 2 * 3600e3;
+  fs.writeFileSync(sf, JSON.stringify(st));
+  assert(/cache has probably expired/.test(run('prompt.js', inp).systemMessage));
+});
+
+test('a wrong type in config.json does not break the hooks', () => {
+  const cf = path.join(tmp, 'data', 'config.json');
+  fs.writeFileSync(cf, JSON.stringify({ neverTrim: 'C:/x', trimMaxChars: 'big' }));
+  try {
+    assert(bash('w1', 'x', big, 'tw1').hookSpecificOutput.updatedToolOutput.stdout.includes('Output trimmed'));
+  } finally { fs.unlinkSync(cf); }
+});
+
+test('old saved outputs are deleted at startup', () => {
+  const old = path.join(tmp, 'data', 'out', 'old.txt');
+  fs.writeFileSync(old, 'x');
+  const t = (Date.now() - 30 * 864e5) / 1000;
+  fs.utimesSync(old, t, t);
+  run('session-start.js', { session_id: 'z1', cwd: tmp, source: 'startup' });
+  assert(!fs.existsSync(old));
+});
+
+test('report adds up net savings, reopened outputs and overrides', () => {
   const o = execFileSync('node', [path.join(root, 'scripts', 'report.js')], { env }).toString();
   assert(/Total/.test(o) && /Restarts with handoff: 1/.test(o));
-  assert(/Loops stopped/.test(o) && /Known errors/.test(o));
+  assert(/Reopened/.test(o) && /Loops stopped/.test(o) && /Known errors/.test(o));
+  assert(!/0k to 0k/.test(o));
 });
 
 console.log(`\n${n} tests passed`);

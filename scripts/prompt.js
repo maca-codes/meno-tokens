@@ -35,6 +35,13 @@ const MSG = {
     'To restart light: /token-diet:handoff, then /clear.',
 };
 
+const CACHE_MSG = {
+  it: (m, k) => `token-diet: pausa di ${m} minuti, la cache è probabilmente scaduta: questo messaggio rimanda ${k}k token a prezzo pieno. ` +
+    'Se cambi argomento, conviene ripartire leggero: /token-diet:handoff e poi /clear.',
+  en: (m, k) => `token-diet: ${m}-minute pause, the cache has probably expired: this message re-sends ${k}k tokens at full price. ` +
+    'If you are switching topic, restart light: /token-diet:handoff, then /clear.',
+};
+
 // First request of a session on Opus that looks simple (short question, nothing to
 // build or fix): suggest Sonnet. Only once and only at the start, because switching
 // model later re-sends the whole context without cache and costs more.
@@ -72,8 +79,20 @@ try {
 } catch {}
 
 const st = lib.loadState(input);
+const msgs = [];
+
+// A pause longer than the prompt cache lifetime: the next message re-sends the whole
+// context at full price. Told to the user only (costs nothing), and only when it is big.
+const now = Date.now();
+if (cfg.cacheTtlMinutes > 0 && st.lastPrompt && now - st.lastPrompt > cfg.cacheTtlMinutes * 60e3 && used >= 30000) {
+  msgs.push((CACHE_MSG[cfg.lang] || CACHE_MSG.en)(Math.round((now - st.lastPrompt) / 60e3), Math.round(used / 1000)));
+}
+st.lastPrompt = now;
+
 const hit = cfg.contextWarnAt.filter((t) => used >= t && !st.warned.includes(t));
-if (!hit.length) lib.out(null);
-st.warned.push(...hit);
+if (hit.length) {
+  st.warned.push(...hit);
+  msgs.push((MSG[cfg.lang] || MSG.en)(Math.round(used / 1000)));
+}
 lib.saveState(input, st);
-lib.out({ systemMessage: (MSG[cfg.lang] || MSG.en)(Math.round(used / 1000)) });
+lib.out(msgs.length ? { systemMessage: msgs.join('\n') } : null);

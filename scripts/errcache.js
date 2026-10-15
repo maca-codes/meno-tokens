@@ -22,15 +22,23 @@ function cacheFile() {
   return path.join(dir, 'errors.json');
 }
 
+// A file that exists but cannot be read is never overwritten: that would wipe the memory.
+let unreadable = false;
 function load() {
   let list = [];
-  try { list = JSON.parse(fs.readFileSync(cacheFile(), 'utf8')); } catch {}
+  try {
+    list = JSON.parse(fs.readFileSync(cacheFile(), 'utf8'));
+  } catch (e) {
+    if (e.code !== 'ENOENT') unreadable = true;
+  }
+  if (!Array.isArray(list)) { unreadable = true; list = []; }
   const since = Date.now() - MAX_AGE_DAYS * 864e5;
-  return Array.isArray(list) ? list.filter((e) => Date.parse(e.ts) >= since) : [];
+  return list.filter((e) => e && Date.parse(e.ts) >= since);
 }
 
 function save(list) {
-  try { fs.writeFileSync(cacheFile(), JSON.stringify(list.slice(-MAX_ENTRIES), null, 1)); } catch {}
+  if (unreadable) return;
+  lib.writeJSON(cacheFile(), list.slice(-MAX_ENTRIES), true);
 }
 
 // Paths, numbers and hashes are masked: the same error in another folder or line still matches.
@@ -57,10 +65,14 @@ function callKey(tool, ti) {
   return tool + ':' + (ti.file_path || ti.notebook_path || ti.url || '');
 }
 
+// Commands that only look around (list, print, search, status) are not part of a fix.
+const LOOK_ONLY = /^(cd|ls|dir|pwd|echo|cat|type|head|tail|less|more|grep|rg|find|which|where|get-childitem|get-content|gci|git (status|log|diff|show|branch))\b/i;
+
 function step(tool, ti) {
   ti = ti || {};
   if (ti.command) {
-    const c = String(ti.command).replace(/\s+/g, ' ').trim();
+    const c = lib.maskSecrets(String(ti.command).replace(/\s+/g, ' ').trim());
+    if (LOOK_ONLY.test(c) && !/[;&|]/.test(c)) return null;
     return `ran \`${c.length > 120 ? c.slice(0, 120) + '…' : c}\``;
   }
   if (/^(Edit|MultiEdit|Write|NotebookEdit)$/.test(tool)) return `${tool === 'Write' ? 'wrote' : 'edited'} ${path.basename(ti.file_path || ti.notebook_path || '')}`;
@@ -73,7 +85,7 @@ function onFailure(input) {
   if (!fp) return null;
   const st = lib.loadState(input);
   st.cases = (st.cases || []).filter((c) => c.key !== callKey(input.tool_name, input.tool_input));
-  st.cases.push({ fp, key: callKey(input.tool_name, input.tool_input), sample: String(input.error).slice(0, 200), steps: [] });
+  st.cases.push({ fp, key: callKey(input.tool_name, input.tool_input), sample: lib.maskSecrets(String(input.error).slice(0, 200)), steps: [] });
   st.cases = st.cases.slice(-MAX_OPEN);
   st.hinted = st.hinted || [];
   let hit = null;

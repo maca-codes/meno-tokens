@@ -4,7 +4,7 @@
 
 No proxy, no server, no background process. Just a few hooks and Node.js.
 
-![version](https://img.shields.io/badge/version-0.6.0-blue) ![license](https://img.shields.io/badge/license-MIT-green) ![node](https://img.shields.io/badge/requires-Node.js-339933) ![tests](https://img.shields.io/badge/tests-24%20passing-brightgreen)
+![version](https://img.shields.io/badge/version-0.7.0-blue) ![license](https://img.shields.io/badge/license-MIT-green) ![node](https://img.shields.io/badge/requires-Node.js-339933) ![tests](https://img.shields.io/badge/tests-36%20passing-brightgreen)
 
 ```
 claude plugin marketplace add maca-codes/token-diet
@@ -31,7 +31,7 @@ flowchart LR
     B -- "whole read of a big file,<br/>or a file already in context" --> C[asks for a range or a Grep first]
     B -- ok --> D[tool runs]
     D --> E{token-diet<br/>after the call}
-    E -- "output over ~2k tokens" --> F[keeps start, end and every error line<br/>full output saved to a file]
+    E -- "output over ~4k tokens" --> F[summarises by type: folders, JSON keys, diff files,<br/>or start, end and error lines; full output saved]
     E -- "same error 3 times" --> G[tells Claude to change strategy]
     E -- "error seen and fixed before" --> H[passes the old fix as a hint]
     E -- ok --> I[output goes to Claude unchanged]
@@ -45,21 +45,21 @@ Nothing is ever lost. A trimmed output is saved in full, and the model can Grep 
 
 | Feature | What happens |
 |---|---|
-| **Output trimming** | Bash, PowerShell and Grep output over ~2k tokens is cut down to the first and last lines plus every error or warning line in between. The full output is saved to a file the model can search. |
-| **Read guard** | A whole read of a file with 400+ lines is turned into a request to Grep or read a range first. If the model insists, the read goes through. |
-| **No re-reads** | A file that is unchanged and already in context is not read again. Edits, `/clear` and compaction reset this; subagents are tracked separately. |
-| **Loop breaker** | When a tool fails 3 times with the same error, or a command keeps returning the same error output, Claude is told to stop and try another approach. You get a one-line notice. Numbers in errors are ignored, so changing line numbers or timings do not hide a loop. |
-| **Error memory** | When a call fails and the same call later succeeds, the steps in between (8 at most) are saved as the fix. If the same error appears again, in any project, the fix is given to Claude as a short hint (~100 tokens). Paths and numbers are masked, so the same error in another folder still matches. Entries expire after 60 days. |
+| **Output trimming** | Bash, PowerShell and Grep output over ~4k tokens is cut down, in a way that fits what it is: a file listing is summarised by folder (so nothing in the middle disappears), JSON by its structure, a diff by its files with +/- counts, anything else to the first and last lines plus every error or warning line in between. The full output is saved to a file the model can search, with secrets masked; reading it again is never trimmed. |
+| **Read guard** | A whole read of a file with 800+ lines is turned into a request to Grep or read a range first. If the model insists, the read goes through. |
+| **No re-reads** | A part of a file that is unchanged and already in context is not read again. Edits, `/clear` and compaction reset this; subagents are tracked separately. |
+| **Loop breaker** | When a tool fails 3 times in a row with the same error, or a command keeps returning the same problem, Claude is told to stop and try another approach. You get a one-line notice. Numbers in errors are ignored, so changing line numbers or timings do not hide a loop; a clean result in between resets the count, and "0 failed" is not a problem. |
+| **Error memory** | When a call fails and the same call later succeeds, the steps in between (8 at most, look-only commands like `ls` or `git status` excluded) are saved as the fix. If the same error appears again, in any project, the fix is given to Claude as a short hint (~100 tokens). Paths and numbers are masked, so the same error in another folder still matches; passwords and tokens are masked before saving. |
 
 ### For you
 
 | Feature | What happens |
 |---|---|
-| **Context warnings** | You are warned at 80k, 150k, 250k and 400k tokens of context. The warning is shown to you only, so it costs nothing. |
+| **Context warnings** | You are warned at 80k, 150k, 250k and 400k tokens of context, and when a pause longer than the cache lifetime (60 minutes by default) means the next message re-sends a big context at full price. The warnings are shown to you only, so they cost nothing. |
 | **Model hint** | If the first request of an Opus session looks simple, you are told you could use Sonnet (`/model sonnet`). Shown once, at the start, because switching later reloads the whole context. |
 | **Light restart** | `/token-diet:handoff` writes a short note on where you are. Run `/clear` and the new session loads it automatically: you continue with a few hundred tokens instead of the whole old context. |
 | **Setup hygiene** | `/token-diet:hygiene` measures what every session loads before your first message (CLAUDE.md files, memory, skill descriptions, MCP servers, startup hooks) and lists the skills and servers you never used. With `analyze`, Claude proposes cuts and changes nothing until you agree. |
-| **Proof** | `/token-diet:report` shows tokens saved per day, loops stopped and errors recognized. Reads the model insisted on are subtracted, so the number is not inflated. |
+| **Proof** | `/token-diet:report` shows net tokens saved per day, loops stopped and errors recognized. Trimmed outputs the model opened again and reads it insisted on are subtracted, so the number is not inflated. |
 
 ## Plays well with others
 
@@ -67,7 +67,7 @@ token-diet does not compete with other token savers. It works on a different lay
 
 | Tool | What it does | Together with token-diet |
 |---|---|---|
-| [RTK](https://github.com/rtk-ai/rtk) | Rewrites shell commands into compact forms before they run. | RTK shrinks the output at the source, token-diet trims only what is still too long afterwards. Savings are counted on what token-diet actually receives, so nothing is counted twice. Tested side by side with no conflict. |
+| [RTK](https://github.com/rtk-ai/rtk) | Rewrites shell commands into compact forms before they run. | RTK shrinks the output at the source, token-diet trims only what is still too long afterwards, with a double threshold for `rtk` commands so compact output is not cut twice. Savings are counted on what token-diet actually receives, so nothing is counted twice. Tested side by side with no conflict. |
 | Output-style skills (e.g. caveman) | Make Claude's own replies shorter. | They cut what Claude writes, token-diet cuts what tools return. Different tokens, no overlap. |
 | [CodeBurn](https://github.com/getagentseal/codeburn) | Measures real spend from your transcripts. | Use it to check the savings before and after installing token-diet. |
 
@@ -109,15 +109,17 @@ Create `config.json` in the plugin data folder (`~/.claude/plugins/data/token-di
 ```json
 {
   "lang": "en",
-  "trimMaxChars": 8000,
+  "trimMaxChars": 16000,
   "trimHeadLines": 40,
   "trimTailLines": 30,
-  "readMaxLines": 400,
+  "readMaxLines": 800,
   "contextWarnAt": [80000, 150000, 250000, 400000],
   "loopAfter": 3,
   "modelHint": true,
   "hygieneExtraFiles": [],
-  "neverTrim": []
+  "neverTrim": [],
+  "keepOutputsDays": 7,
+  "cacheTtlMinutes": 60
 }
 ```
 
@@ -125,9 +127,11 @@ Create `config.json` in the plugin data folder (`~/.claude/plugins/data/token-di
 
 `hygieneExtraFiles` adds files your setup reads at startup to the hygiene count.
 
+`keepOutputsDays` sets how long saved full outputs are kept. `cacheTtlMinutes` is the prompt cache lifetime used for the pause warning (`0` turns it off).
+
 ## Privacy
 
-Everything stays on your machine, never in your repository. Logs and saved outputs live in the plugin data folder (`~/.claude/plugins/data/token-diet-<marketplace>/`), handoff notes and the error memory in `~/.claude/token-diet/`. Nothing is sent anywhere.
+Everything stays on your machine, never in your repository. Logs and saved outputs live in the plugin data folder (`~/.claude/plugins/data/token-diet-<marketplace>/`), handoff notes and the error memory in `~/.claude/token-diet/`. Nothing is sent anywhere. Things that look like passwords, tokens and API keys are masked before anything is saved, and saved outputs are deleted after 7 days.
 
 ## Test
 
