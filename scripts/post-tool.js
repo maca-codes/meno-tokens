@@ -1,7 +1,8 @@
 // PostToolUse: trims long Bash/PowerShell/Grep output before it reaches the model,
 // keeping head, tail and error lines. The full output is saved to a file the model can open.
 // Also records successful Reads so pre-tool.js can spot re-reads of unchanged files,
-// and flags a shell command that keeps returning the same output (loop).
+// flags a shell command that keeps returning the same output (loop), and records
+// steps towards fixing earlier failures (errcache.js).
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -63,6 +64,9 @@ const input = lib.readStdin();
 const cfg = lib.config();
 const tool = input.tool_name;
 const res = input.tool_response;
+
+// A success may be a step towards fixing an earlier failure, or the fix itself.
+require('./errcache').onSuccess(input);
 
 if (tool === 'Read') {
   const p = lib.resolvePath(input.tool_input && input.tool_input.file_path, input.cwd);

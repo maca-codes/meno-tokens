@@ -9,7 +9,7 @@ const assert = require('assert');
 
 const root = path.join(__dirname, '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'token-diet-test-'));
-const env = Object.assign({}, process.env, { CLAUDE_PLUGIN_DATA: path.join(tmp, 'data'), TOKEN_DIET_LANG: 'en' });
+const env = Object.assign({}, process.env, { CLAUDE_PLUGIN_DATA: path.join(tmp, 'data'), TOKEN_DIET_LANG: 'en', TOKEN_DIET_ERRORS: path.join(tmp, 'errors.json') });
 
 function run(script, input) {
   const o = execFileSync('node', [path.join(root, 'scripts', script)], { input: JSON.stringify(input), env }).toString();
@@ -145,10 +145,49 @@ test('same command with the same error output 3 times is a loop; clean output is
   assert(/change strategy/.test(r.hookSpecificOutput.additionalContext));
 });
 
+const modErr = "Exit code 1\nError: Cannot find module 'sharp'\nRequire stack:\n- C:\\proj\\a\\node_modules\\next\\dist\\x.js";
+const ok = (sid, cwd, tool, tool_input) => run('post-tool.js', { session_id: sid, cwd, tool_name: tool, tool_input, tool_response: { stdout: 'done', stderr: '' } });
+
+test('a fixed error is remembered and offered as a hint in another project', () => {
+  const A = path.join(tmp, 'PowerWash'), B = path.join(tmp, 'SCENTIVE');
+  assert.strictEqual(run('failure.js', { session_id: 'e1', cwd: A, tool_name: 'Bash', tool_input: { command: 'npm run build' }, error: modErr }), null);
+  ok('e1', A, 'Read', { file_path: path.join(A, 'x') });
+  ok('e1', A, 'Bash', { command: 'npm install sharp' });
+  ok('e1', A, 'Edit', { file_path: path.join(A, 'next.config.js') });
+  ok('e1', A, 'Bash', { command: 'npm run build -- --debug' });
+  const saved = JSON.parse(fs.readFileSync(path.join(tmp, 'errors.json'), 'utf8'));
+  assert.deepStrictEqual(saved[0].steps, ['ran `npm install sharp`', 'edited next.config.js']);
+  assert.strictEqual(saved[0].project, 'PowerWash');
+  const other = modErr.replace('C:\\proj\\a', 'D:\\work\\b');
+  const r = run('failure.js', { session_id: 'e2', cwd: B, tool_name: 'Bash', tool_input: { command: 'npm run dev' }, error: other });
+  assert(/npm install sharp/.test(r.hookSpecificOutput.additionalContext));
+  assert(/PowerWash/.test(r.systemMessage));
+  assert.strictEqual(run('failure.js', { session_id: 'e2', cwd: B, tool_name: 'Bash', tool_input: { command: 'npm run dev' }, error: other }), null, 'hint once per session');
+});
+
+test('generic errors and fixes with too many steps are not saved', () => {
+  const C = path.join(tmp, 'C');
+  run('failure.js', { session_id: 'e3', cwd: C, tool_name: 'Bash', tool_input: { command: 'grep x' }, error: 'Exit code 1' });
+  ok('e3', C, 'Bash', { command: 'echo a' });
+  ok('e3', C, 'Bash', { command: 'grep x y' });
+  run('failure.js', { session_id: 'e3', cwd: C, tool_name: 'Bash', tool_input: { command: 'make all' }, error: 'Exit code 2\n' + 'make: *** [all] Error 2 because something went very wrong' });
+  for (let i = 0; i < 9; i++) ok('e3', C, 'Bash', { command: 'try ' + i });
+  ok('e3', C, 'Bash', { command: 'make all' });
+  const saved = JSON.parse(fs.readFileSync(path.join(tmp, 'errors.json'), 'utf8'));
+  assert.strictEqual(saved.length, 1);
+});
+
+test('errors list and delete', () => {
+  const e = (a) => execFileSync('node', [path.join(root, 'scripts', 'errors.js'), ...a], { env }).toString();
+  assert(/PowerWash/.test(e([])) && /npm install sharp/.test(e([])));
+  assert(/Deleted error 1/.test(e(['delete', '1'])));
+  assert(/No errors saved/.test(e([])));
+});
+
 test('report adds up savings and takes back overrides', () => {
   const o = execFileSync('node', [path.join(root, 'scripts', 'report.js')], { env }).toString();
   assert(/Total/.test(o) && /Restarts with handoff: 1/.test(o));
-  assert(/Loops stopped/.test(o));
+  assert(/Loops stopped/.test(o) && /Known errors/.test(o));
 });
 
 console.log(`\n${n} tests passed`);

@@ -4,7 +4,7 @@
       { "matcher": "Read", "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pre-tool.js\"", "timeout": 10 } ] }
     ],
     "PostToolUse": [
-      { "matcher": "Bash|PowerShell|Grep|Read", "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/post-tool.js\"", "timeout": 10 } ] }
+      { "matcher": "Bash|PowerShell|Grep|Read|Edit|MultiEdit|Write|NotebookEdit", "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/post-tool.js\"", "timeout": 10 } ] }
     ],
     "PostToolUseFailure": [
       { "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/failure.js\"", "timeout": 10 } ] }
