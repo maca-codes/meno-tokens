@@ -31,7 +31,15 @@ let cfgCache = null;
 function config() {
   if (cfgCache) return cfgCache;
   let user = {};
-  try { user = JSON.parse(fs.readFileSync(path.join(dataDir(), 'config.json'), 'utf8')); } catch {}
+  // Skill commands may run without CLAUDE_PLUGIN_DATA: then look in the plugin data dirs too.
+  const base = path.join(os.homedir(), '.claude', 'plugins', 'data');
+  let dirs = [dataDir()];
+  if (!process.env.CLAUDE_PLUGIN_DATA) {
+    try { dirs = dirs.concat(fs.readdirSync(base).filter((d) => /^token-diet(-|$)/.test(d)).map((d) => path.join(base, d))); } catch {}
+  }
+  for (const d of dirs) {
+    try { user = JSON.parse(fs.readFileSync(path.join(d, 'config.json'), 'utf8')); break; } catch {}
+  }
   cfgCache = Object.assign({}, DEFAULTS, user);
   if (!cfgCache.lang) {
     const env = process.env.TOKEN_DIET_LANG;
