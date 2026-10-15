@@ -1,0 +1,8 @@
+{
+  "name": "token-diet",
+  "version": "0.1.0",
+  "description": "Cuts Claude Code token waste without a proxy: trims long tool output, stops needless file reads, warns when the context gets heavy and restarts sessions from a short handoff. Reports what it saved.",
+  "author": { "name": "MaCa" },
+  "license": "MIT",
+  "keywords": ["tokens", "cost", "context", "hooks"]
+}

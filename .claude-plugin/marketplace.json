@@ -1,0 +1,16 @@
+{
+  "name": "token-diet",
+  "owner": {
+    "name": "MaCa"
+  },
+  "plugins": [
+    {
+      "name": "token-diet",
+      "source": "./",
+      "description": "Cut Claude Code token waste: trims tool output, guards file reads, restarts heavy sessions from a handoff."
+    }
+  ],
+  "metadata": {
+    "description": "token-diet: cut Claude Code token waste without a proxy."
+  }
+}
