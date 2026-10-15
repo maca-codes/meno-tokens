@@ -16,6 +16,7 @@ Every message you send re-sends the whole conversation. A session that grows to 
 | Model hint | When the first request of a session on Opus looks simple (short, nothing to build or fix), you are told you can switch to Sonnet with `/model sonnet`. | Shown to you only, once per session, at the start: switching later re-sends the whole context. Turn it off with `"modelHint": false`. |
 | Heavy sessions | Warns you at 80k, 150k, 250k and 400k tokens of context. | The warning goes to you, not to the model, so it costs no tokens. |
 | Restart light | `/token-diet:handoff` writes a short note (stored in `~/.claude/token-diet/`, never in the repo). After `/clear`, the new session loads it automatically. | You continue with a few hundred tokens instead of the whole old context. |
+| Hygiene | `/token-diet:hygiene [days]` measures what every session loads before your first message: CLAUDE.md files and imports, memory index, skill descriptions, MCP servers, startup hooks. It shows which skills and servers were never used, from your transcripts, and duplicate lines. | Read-only. `/token-diet:hygiene analyze` also has Claude propose cuts (contradictions, rules to scope to paths, procedures to turn into skills, text to shorten) and changes nothing until you say so. Add files your setup reads at startup with `"hygieneExtraFiles"`. |
 | Proof | `/token-diet:report [days]` shows the savings per day. | Reads the model insisted on are subtracted, so the number is not inflated. |
 
 Every intervention is logged. Nothing is sent anywhere.
@@ -47,7 +48,8 @@ Create `config.json` in the plugin data folder (`~/.claude/plugins/data/token-di
   "readMaxLines": 400,
   "contextWarnAt": [80000, 150000, 250000, 400000],
   "loopAfter": 3,
-  "modelHint": true
+  "modelHint": true,
+  "hygieneExtraFiles": []
 }
 ```
 

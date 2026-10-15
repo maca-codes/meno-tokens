@@ -16,7 +16,8 @@ const DEFAULTS = {
   readMaxBytes: 40000,
   contextWarnAt: [80000, 150000, 250000, 400000],
   handoffMaxAgeHours: 48,
-  modelHint: true,            // suggest Sonnet when the first request on Opus looks simple
+  hygieneExtraFiles: [],      // more files read at every session start, measured by /token-diet:hygiene
+  modelHint: true,           // suggest Sonnet when the first request on Opus looks simple
   loopAfter: 3,              // same failure (or same command + output) this many times = loop
 };
 

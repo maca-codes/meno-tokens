@@ -197,6 +197,23 @@ test('simple first request on Opus suggests Sonnet, once', () => {
   assert.strictEqual(p('m3', 'che ore sono a Tokyo?'), null);
 });
 
+test('hygiene measures instructions, imports, skills, usage and duplicates', () => {
+  const H = path.join(tmp, 'home'), C = path.join(H, '.claude'), proj = path.join(tmp, 'proj');
+  const dup = 'Always answer in Italian, every single message.';
+  const w = (f, s) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, s); };
+  w(path.join(C, 'CLAUDE.md'), '@RULES.md\n' + dup);
+  w(path.join(C, 'RULES.md'), 'x'.repeat(400));
+  w(path.join(proj, 'CLAUDE.md'), '- ' + dup);
+  w(path.join(C, 'skills', 'used', 'SKILL.md'), '---\nname: used\ndescription: >-\n  A skill that\n  spans lines\n---\n');
+  w(path.join(C, 'skills', 'idle', 'SKILL.md'), '---\nname: idle\ndescription: never called\n---\n');
+  w(path.join(C, 'projects', 'p', 's.jsonl'), '{"type":"tool_use","id":"x","name":"Skill","input":{"skill":"used"}}\n');
+  const o = execFileSync('node', [path.join(root, 'scripts', 'hygiene.js'), '30'], { cwd: proj, env: Object.assign({}, env, { TOKEN_DIET_HOME: H }) }).toString();
+  assert(/RULES\.md/.test(o), 'imported file measured');
+  assert(/used\s+\d+\s+used 1x/.test(o) && /idle\s+\d+\s+never used/.test(o));
+  assert(/Duplicate lines across instruction files: 1/.test(o));
+  assert(!/used\s+[0-3]\s/.test(o), 'multi-line description read');
+});
+
 test('report adds up savings and takes back overrides', () => {
   const o = execFileSync('node', [path.join(root, 'scripts', 'report.js')], { env }).toString();
   assert(/Total/.test(o) && /Restarts with handoff: 1/.test(o));
