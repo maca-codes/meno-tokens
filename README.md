@@ -24,7 +24,7 @@ Every intervention is logged. Nothing is sent anywhere.
 ## Install
 
 ```
-claude plugin marketplace add <owner>/token-diet
+claude plugin marketplace add maca-codes/token-diet
 claude plugin install token-diet@token-diet
 ```
 
