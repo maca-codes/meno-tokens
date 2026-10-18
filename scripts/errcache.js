@@ -14,12 +14,10 @@ const MAX_AGE_DAYS = 60;
 const MAX_ENTRIES = 200;
 const MAX_OPEN = 3;
 
-// Fixed location (not CLAUDE_PLUGIN_DATA): the /token-diet:errors skill runs without it.
+// Fixed location (not CLAUDE_PLUGIN_DATA): the /meno:errors skill runs without it.
 function cacheFile() {
-  if (process.env.TOKEN_DIET_ERRORS) return process.env.TOKEN_DIET_ERRORS;   // tests
-  const dir = path.join(os.homedir(), '.claude', 'token-diet');
-  fs.mkdirSync(dir, { recursive: true });
-  return path.join(dir, 'errors.json');
+  if (process.env.MENO_ERRORS) return process.env.MENO_ERRORS;   // tests
+  return path.join(lib.homeDir(), 'errors.json');
 }
 
 // A file that exists but cannot be read is never overwritten: that would wipe the memory.
@@ -45,7 +43,7 @@ function save(list) {
 // Returns null for errors too generic to recognise ("Exit code 1") and for our own denials.
 function fingerprint(tool, error) {
   const err = String(error || '');
-  if (/\[token-diet\]|doesn't want to proceed|permission/i.test(err)) return null;
+  if (/\[(?:meno|token-diet)\]|doesn't want to proceed|permission/i.test(err)) return null;
   const body = err.replace(/^Exit code \d+\s*/i, '').trim();
   if (body.length < 40) return null;
   const norm = body.slice(0, 600)
@@ -102,11 +100,11 @@ function onFailure(input) {
   lib.saveState(input, st);
   if (!hit) return null;
   const T = {
-    it: `[token-diet] Errore già visto (${hit.ts.slice(0, 10)}, ${hit.project}): ho passato a Claude la soluzione di allora.`,
-    en: `[token-diet] Known error (${hit.ts.slice(0, 10)}, ${hit.project}): passed the earlier fix to Claude.`,
+    it: `[meno] Errore già visto (${hit.ts.slice(0, 10)}, ${hit.project}): ho passato a Claude la soluzione di allora.`,
+    en: `[meno] Known error (${hit.ts.slice(0, 10)}, ${hit.project}): passed the earlier fix to Claude.`,
   };
   return {
-    model: `[token-diet] This error was seen before (${hit.ts.slice(0, 10)}, project ${hit.project}) and was fixed by: ` +
+    model: `[meno] This error was seen before (${hit.ts.slice(0, 10)}, project ${hit.project}) and was fixed by: ` +
       hit.steps.map((s, i) => `${i + 1}) ${s}`).join(' ') +
       '. This is a hint from an automatic record: check it fits here before repeating it.',
     user: T[lib.config().lang] || T.en,

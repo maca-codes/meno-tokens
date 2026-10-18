@@ -1,6 +1,6 @@
 ---
 name: errors
-description: List the known errors token-diet remembers, with the fix recorded for each, or delete them.
+description: List the known errors Meno remembers, with the fix recorded for each, or delete them.
 disable-model-invocation: true
 allowed-tools: Bash(node:*)
 argument-hint: "[delete N | clear]"

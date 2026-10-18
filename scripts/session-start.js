@@ -3,7 +3,7 @@
 //   state is reset (the savings of saved outputs stay, see lib.resetState);
 // - on a new start, /clear or compaction it adds a short instruction: searches and long
 //   reads go to a light subagent, so only a summary enters this context;
-// - on a fresh start or /clear it loads the handoff note written by /token-diet:handoff
+// - on a fresh start or /clear it loads the handoff note written by /meno:handoff
 //   (stored outside the project), so the new session continues with a few hundred tokens
 //   instead of the whole old context;
 // - once a day it deletes old saved outputs and session files.
@@ -53,7 +53,7 @@ if (input.model) {
 
 // Every token read into this context is sent again with each later message: reading
 // through a subagent keeps only its summary here. ~70 tokens, once per session.
-const DELEGATE = 'token-diet: to keep this context small, when a task needs searching or reading more than ~3 files, ' +
+const DELEGATE = 'Meno: to keep this context small, when a task needs searching or reading more than ~3 files, ' +
   'delegate that part to a subagent (Explore, or Agent with model "haiku") and ask for a short summary with file:line ' +
   'references. Plan, decide, edit and verify yourself; read directly only the lines you will change. ' +
   'Do not delegate small lookups or the edits themselves.';
@@ -76,7 +76,7 @@ function handoff() {
   let before = 0;
   try { before = JSON.parse(fs.readFileSync(path.join(lib.dataDir(), 'lastctx-' + lib.hash(cwd) + '.json'), 'utf8')).used || 0; } catch {}
   lib.logEvent(input, 'handoff', 0, { ctxBefore: before, handoffTokens: lib.tokens(text.length) });
-  return 'Handoff from the previous session (written by token-diet). Continue from here; ' +
+  return 'Handoff from the previous session (written by Meno). Continue from here; ' +
     'read files only when the task needs them.\n\n' + text;
 }
 const note = handoff();

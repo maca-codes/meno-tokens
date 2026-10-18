@@ -14,7 +14,7 @@ You run in a separate subagent so the files you read stay out of the main conver
 
 Show the report above to the user exactly as it is, in a code block, without the FILES list at the end.
 
-If the arguments do not contain "analyze" or "analizza": add only one line, in the user's language, saying that `/token-diet:hygiene analyze` gives a full analysis with proposals. Stop there.
+If the arguments do not contain "analyze" or "analizza": add only one line, in the user's language, saying that `/meno:hygiene analyze` gives a full analysis with proposals. Stop there.
 
 If they do, read every file in the FILES list, then propose cuts in the user's language, grouped like this:
 

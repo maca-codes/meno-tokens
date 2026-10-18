@@ -125,7 +125,7 @@ function saveFull(input, text) {
 }
 
 function note(file, before, after) {
-  return `\n[token-diet] Trimmed ~${lib.tokens(before - after)} tokens. Full output: ${file} (Grep it or Read a range).`;
+  return `\n[meno] Trimmed ~${lib.tokens(before - after)} tokens. Full output: ${file} (Grep it or Read a range).`;
 }
 
 const wantsFull = (cmd) => /#\s*full\s*$/m.test(cmd || '');

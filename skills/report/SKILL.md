@@ -1,6 +1,6 @@
 ---
 name: report
-description: Show how many tokens token-diet saved, per day.
+description: Show how many tokens Meno saved, per day.
 disable-model-invocation: true
 allowed-tools: Bash(node:*)
 argument-hint: "[days]"

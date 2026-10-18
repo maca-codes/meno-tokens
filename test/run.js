@@ -8,8 +8,8 @@ const path = require('path');
 const assert = require('assert');
 
 const root = path.join(__dirname, '..');
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'token-diet-test-'));
-const env = Object.assign({}, process.env, { CLAUDE_PLUGIN_DATA: path.join(tmp, 'data'), TOKEN_DIET_LANG: 'en', TOKEN_DIET_ERRORS: path.join(tmp, 'errors.json') });
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'meno-test-'));
+const env = Object.assign({}, process.env, { CLAUDE_PLUGIN_DATA: path.join(tmp, 'data'), MENO_LANG: 'en', MENO_ERRORS: path.join(tmp, 'errors.json'), MENO_HOME: path.join(tmp, 'nohome') });
 
 function run(script, input) {
   const o = execFileSync('node', [path.join(root, 'scripts', script)], { input: JSON.stringify(input), env }).toString();
@@ -318,7 +318,7 @@ test('hygiene measures instructions, imports, skills, usage and duplicates', () 
   w(path.join(C, 'skills', 'used', 'SKILL.md'), '---\nname: used\ndescription: >-\n  A skill that\n  spans lines\n---\n');
   w(path.join(C, 'skills', 'idle', 'SKILL.md'), '---\nname: idle\ndescription: never called\n---\n');
   w(path.join(C, 'projects', 'p', 's.jsonl'), '{"type":"tool_use","id":"x","name":"Skill","input":{"skill":"used"}}\n');
-  const o = execFileSync('node', [path.join(root, 'scripts', 'hygiene.js'), '30'], { cwd: proj, env: Object.assign({}, env, { TOKEN_DIET_HOME: H }) }).toString();
+  const o = execFileSync('node', [path.join(root, 'scripts', 'hygiene.js'), '30'], { cwd: proj, env: Object.assign({}, env, { MENO_HOME: H }) }).toString();
   assert(/RULES\.md/.test(o), 'imported file measured');
   assert(!/secret\.md/.test(o), 'project file cannot import from outside the project');
   assert(/used\s+\d+\s+used 1x/.test(o) && /idle\s+\d+\s+never used/.test(o));
@@ -342,7 +342,7 @@ test('a wrong type in config.json does not break the hooks', () => {
   const cf = path.join(tmp, 'data', 'config.json');
   fs.writeFileSync(cf, JSON.stringify({ neverTrim: 'C:/x', trimMaxChars: 'big' }));
   try {
-    assert(bash('w1', 'x', big, 'tw1').hookSpecificOutput.updatedToolOutput.stdout.includes('[token-diet] Trimmed'));
+    assert(bash('w1', 'x', big, 'tw1').hookSpecificOutput.updatedToolOutput.stdout.includes('[meno] Trimmed'));
   } finally { fs.unlinkSync(cf); }
 });
 
@@ -408,7 +408,7 @@ test('without a model from SessionStart, the main model is read from the transcr
 test('a long subagent reply, Glob list, WebFetch result and MCP text are trimmed, keeping their shape', () => {
   const agent = run('post-tool.js', { session_id: 'g1', cwd: tmp, tool_name: 'Agent', tool_use_id: 'tg1', tool_input: {},
     tool_response: { status: 'completed', content: [{ type: 'text', text: big }] } }).hookSpecificOutput.updatedToolOutput;
-  assert(agent.content[0].text.length < big.length / 5 && agent.content[0].text.includes('[token-diet] Trimmed'));
+  assert(agent.content[0].text.length < big.length / 5 && agent.content[0].text.includes('[meno] Trimmed'));
   const names = [];
   for (let d = 0; d < 40; d++) for (let f = 0; f < 30; f++) names.push(`src/dir${d}/file${f}.js`);
   const glob = run('post-tool.js', { session_id: 'g1', cwd: tmp, tool_name: 'Glob', tool_use_id: 'tg2', tool_input: { pattern: '**/*.js' },
@@ -480,7 +480,7 @@ test('report shows subagent costs and internal errors', () => {
   fs.appendFileSync(path.join(tmp, 'data', 'errors.log'), `${new Date().toISOString()} post-tool.js Error: boom\n`);
   const o = execFileSync('node', [path.join(root, 'scripts', 'report.js')], { env }).toString();
   assert(/Work delegated to subagents/.test(o) && /haiku: 2 subagents/.test(o) && /saving ~\$/.test(o));
-  assert(/1 internal token-diet errors/.test(o));
+  assert(/1 internal Meno errors/.test(o));
 });
 
 console.log(`\n${n} tests passed`);

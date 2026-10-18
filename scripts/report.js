@@ -1,4 +1,4 @@
-// Prints what token-diet saved, per day. Usage: node report.js [days=7]
+// Prints what Meno saved, per day. Usage: node report.js [days=7]
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -8,7 +8,7 @@ const days = parseInt(process.argv[2], 10) || 7;
 const cfg = lib.config();
 const T = {
   it: {
-    title: `token-diet — ultimi ${days} giorni`, none: 'Ancora nessun intervento registrato.',
+    title: `Meno — ultimi ${days} giorni`, none: 'Ancora nessun intervento registrato.',
     head: ['Giorno', 'Output tagliati', 'Riaperti', 'Letture evitate', 'Riletture evitate', 'Ripensamenti', 'Cicli fermati', 'Errori riconosciuti', 'Token risparmiati (netti)'],
     total: 'Totale', handoff: 'Ripartenze con riassunto',
     hrow: (n, a, b) => `${n} — contesto prima della ripartenza ${a}, riassunto ~${b} token`,
@@ -20,11 +20,11 @@ const T = {
     dsave: (x) => `risparmio ~$${x}`, dmore: (x) => `spesa in più ~$${x}`,
     dnote: 'Stima prudente: non conta il contesto che le letture dei subagent avrebbero aggiunto alla conversazione principale.',
     routed: (n) => `Subagent spostati su Sonnet in automatico: ${n}.`,
-    errors: (n) => `Attenzione: ${n} errori interni di token-diet in questo periodo (dettagli in errors.log). Alcune funzioni potrebbero non aver lavorato.`,
+    errors: (n) => `Attenzione: ${n} errori interni di Meno in questo periodo (dettagli in errors.log). Alcune funzioni potrebbero non aver lavorato.`,
     note: 'Stima: 1 token ogni 4 caratteri. Il risparmio è netto: "Riaperti" = output tagliati che Claude ha poi riletto dal file salvato, e "Ripensamenti" = letture bloccate e poi ripetute; quel che hanno riletto è già tolto. "Cicli fermati" = lo stesso tentativo fallito 3 volte di fila: risparmio non stimato. "Errori riconosciuti" = errori già risolti in passato, soluzione passata a Claude.',
   },
   en: {
-    title: `token-diet — last ${days} days`, none: 'No interventions recorded yet.',
+    title: `Meno — last ${days} days`, none: 'No interventions recorded yet.',
     head: ['Day', 'Outputs trimmed', 'Reopened', 'Big reads avoided', 'Re-reads avoided', 'Overrides', 'Loops stopped', 'Known errors', 'Tokens saved (net)'],
     total: 'Total', handoff: 'Restarts with handoff',
     hrow: (n, a, b) => `${n} — context before the restart ${a}, handoff ~${b} tokens`,
@@ -36,19 +36,19 @@ const T = {
     dsave: (x) => `saving ~$${x}`, dmore: (x) => `extra spend ~$${x}`,
     dnote: 'Conservative: it does not count the context that the subagents\' reads would have added to the main conversation.',
     routed: (n) => `Subagents moved to Sonnet automatically: ${n}.`,
-    errors: (n) => `Warning: ${n} internal token-diet errors in this period (details in errors.log). Some features may not have worked.`,
+    errors: (n) => `Warning: ${n} internal Meno errors in this period (details in errors.log). Some features may not have worked.`,
     note: 'Estimate: 1 token per 4 characters. The saving is net: "Reopened" = trimmed outputs Claude then read again from the saved file, and "Overrides" = blocked reads the model repeated; what they read is already taken back. "Loops stopped" = the same failed attempt 3 times in a row; saving not estimated. "Known errors" = errors fixed before, earlier fix passed to Claude.',
   },
 };
 const L = T[cfg.lang] || T.en;
 
 // Skill commands may run without CLAUDE_PLUGIN_DATA, so also look in every
-// token-diet data dir (one per marketplace the plugin came from).
+// Meno data dir, and the old token-diet ones (one per marketplace the plugin came from).
 function dirs() {
   if (process.env.CLAUDE_PLUGIN_DATA) return [process.env.CLAUDE_PLUGIN_DATA];
   const base = path.join(require('os').homedir(), '.claude', 'plugins', 'data');
   let found = [];
-  try { found = fs.readdirSync(base).filter((d) => /^token-diet(-|$)/.test(d)).map((d) => path.join(base, d)); } catch {}
+  try { found = fs.readdirSync(base).filter((d) => /^(meno|token-diet)(-|$)/.test(d)).map((d) => path.join(base, d)); } catch {}
   return found.concat(lib.dataDir());
 }
 

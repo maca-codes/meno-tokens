@@ -12,7 +12,7 @@ const days = parseInt(process.argv[2], 10) || 30;
 const cfg = lib.config();
 const it = cfg.lang === 'it';
 const t = (a, b) => (it ? a : b);
-const HOME = process.env.TOKEN_DIET_HOME || os.homedir();   // tests
+const HOME = (process.env.MENO_HOME || process.env.TOKEN_DIET_HOME) || os.homedir();   // tests
 const CLAUDE = path.join(HOME, '.claude');
 const cwd = process.cwd();
 
@@ -180,8 +180,8 @@ const P = (s) => out.push(s);
 const instrTot = instr.reduce((s, f) => s + f.tokens, 0);
 const skillTot = skills.reduce((s, k) => s + k.tokens, 0);
 
-P(t(`token-diet hygiene — contesto fisso (${short(cwd)}), utilizzo negli ultimi ${days} giorni (${nFiles} sessioni)`,
-  `token-diet hygiene — fixed context (${short(cwd)}), usage in the last ${days} days (${nFiles} sessions)`));
+P(t(`Meno hygiene — contesto fisso (${short(cwd)}), utilizzo negli ultimi ${days} giorni (${nFiles} sessioni)`,
+  `Meno hygiene — fixed context (${short(cwd)}), usage in the last ${days} days (${nFiles} sessions)`));
 P('');
 P(t(`Istruzioni caricate a ogni sessione: ~${fmt(instrTot)} token`, `Instructions loaded every session: ~${fmt(instrTot)} tokens`));
 for (const f of instr.sort((a, b) => b.tokens - a.tokens)) {

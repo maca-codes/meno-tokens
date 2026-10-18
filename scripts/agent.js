@@ -6,8 +6,8 @@
 const lib = require('./lib');
 
 const MSG = {
-  it: 'token-diet: subagent senza modello indicato, avviato su Sonnet invece di Opus.',
-  en: 'token-diet: subagent with no model given, started on Sonnet instead of Opus.',
+  it: 'Meno: subagent senza modello indicato, avviato su Sonnet invece di Opus.',
+  en: 'Meno: subagent with no model given, started on Sonnet instead of Opus.',
 };
 
 const input = lib.readStdin();

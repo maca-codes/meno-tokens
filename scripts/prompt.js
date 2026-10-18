@@ -29,17 +29,17 @@ function contextTokens(transcript) {
 }
 
 const MSG = {
-  it: (k) => `token-diet: contesto a ${k}k token, e ogni messaggio lo rimanda tutto. ` +
-    'Per ripartire leggero: /token-diet:handoff e poi /clear.',
-  en: (k) => `token-diet: context at ${k}k tokens, and every message re-sends all of it. ` +
-    'To restart light: /token-diet:handoff, then /clear.',
+  it: (k) => `Meno: contesto a ${k}k token, e ogni messaggio lo rimanda tutto. ` +
+    'Per ripartire leggero: /meno:handoff e poi /clear.',
+  en: (k) => `Meno: context at ${k}k tokens, and every message re-sends all of it. ` +
+    'To restart light: /meno:handoff, then /clear.',
 };
 
 const CACHE_MSG = {
-  it: (m, k) => `token-diet: pausa di ${m} minuti, la cache è probabilmente scaduta: questo messaggio rimanda ${k}k token a prezzo pieno. ` +
-    'Se cambi argomento, conviene ripartire leggero: /token-diet:handoff e poi /clear.',
-  en: (m, k) => `token-diet: ${m}-minute pause, the cache has probably expired: this message re-sends ${k}k tokens at full price. ` +
-    'If you are switching topic, restart light: /token-diet:handoff, then /clear.',
+  it: (m, k) => `Meno: pausa di ${m} minuti, la cache è probabilmente scaduta: questo messaggio rimanda ${k}k token a prezzo pieno. ` +
+    'Se cambi argomento, conviene ripartire leggero: /meno:handoff e poi /clear.',
+  en: (m, k) => `Meno: ${m}-minute pause, the cache has probably expired: this message re-sends ${k}k tokens at full price. ` +
+    'If you are switching topic, restart light: /meno:handoff, then /clear.',
 };
 
 // First request of a session: the right model for what follows. Opus on something
@@ -48,15 +48,15 @@ const CACHE_MSG = {
 // model later re-sends the whole context without cache and costs more.
 // Shown to the user only (systemMessage): it costs the model nothing.
 const MODEL_MSG = {
-  it: 'token-diet: richiesta semplice. Se la sessione resta su cose così, passa ora a Sonnet con /model sonnet: ' +
+  it: 'Meno: richiesta semplice. Se la sessione resta su cose così, passa ora a Sonnet con /model sonnet: ' +
     'costa meno. Più avanti conviene meno, perché il cambio fa ricaricare tutto il contesto. Per lavori complessi torna a Opus.',
-  en: 'token-diet: simple request. If this session stays on things like this, switch to Sonnet now with /model sonnet: ' +
+  en: 'Meno: simple request. If this session stays on things like this, switch to Sonnet now with /model sonnet: ' +
     'it costs less. Later it pays off less, because switching re-sends the whole context. Go back to Opus for complex work.',
 };
 const UP_MSG = {
-  it: 'token-diet: richiesta complessa. Per lavori così Opus sbaglia meno e fa meno tentativi: passa ora con /model opus ' +
+  it: 'Meno: richiesta complessa. Per lavori così Opus sbaglia meno e fa meno tentativi: passa ora con /model opus ' +
     '(più avanti il cambio costa di più, perché ricarica tutto il contesto).',
-  en: 'token-diet: complex request. For work like this Opus makes fewer mistakes and retries: switch now with /model opus ' +
+  en: 'Meno: complex request. For work like this Opus makes fewer mistakes and retries: switch now with /model opus ' +
     '(later the switch costs more, because it re-sends the whole context).',
 };
 const BUILD = /```|implement|crea|costruis|svilupp|aggiung|modific|refactor|riscriv|debug|bug|error|non funziona|progett|plugin|sito|app\b|gioco|migr|deploy|build|test|codice|script|funzion|feature|create|develop|\badd\b|rewrite|\bfix|project|website|\bcode/i;

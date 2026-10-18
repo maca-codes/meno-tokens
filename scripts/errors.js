@@ -30,5 +30,5 @@ list.forEach((e, i) => {
   console.log(`   ${e.sample.replace(/\s+/g, ' ').slice(0, 140)}`);
   e.steps.forEach((s, j) => console.log(`   ${j + 1}) ${s}`));
 });
-console.log(it ? '\nSi cancellano da soli dopo 60 giorni. Per toglierne uno: /token-diet:errors delete N'
-  : '\nEntries expire after 60 days. To remove one: /token-diet:errors delete N');
+console.log(it ? '\nSi cancellano da soli dopo 60 giorni. Per toglierne uno: /meno:errors delete N'
+  : '\nEntries expire after 60 days. To remove one: /meno:errors delete N');

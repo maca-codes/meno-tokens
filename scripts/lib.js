@@ -1,4 +1,4 @@
-// Shared helpers for token-diet hooks. No dependencies: Node built-ins only.
+// Shared helpers for Meno hooks. No dependencies: Node built-ins only.
 'use strict';
 const fs = require('fs');
 const os = require('os');
@@ -9,7 +9,7 @@ const path = require('path');
 // feature that stops working shows up in the report instead of looking like "nothing to do".
 process.on('uncaughtException', (e) => { logError(path.basename(process.argv[1] || 'hook'), e); process.exit(0); });
 
-const VERSION = '0.8.1';
+const VERSION = '0.8.2';
 
 const DEFAULTS = {
   lang: null,                 // 'it' | 'en' | null (auto from system locale)
@@ -22,7 +22,7 @@ const DEFAULTS = {
   readMaxBytes: 60000,
   contextWarnAt: [80000, 150000, 250000, 400000],
   handoffMaxAgeHours: 48,
-  hygieneExtraFiles: [],      // more files read at every session start, measured by /token-diet:hygiene
+  hygieneExtraFiles: [],      // more files read at every session start, measured by /meno:hygiene
   modelHint: 'both',         // first request: 'both' (Opus->Sonnet if simple, Sonnet->Opus if hard), 'down', or false
   delegateHint: true,        // at session start, ask Claude to delegate searches and long reads to a light subagent
   agentModel: 'off',         // 'on': subagents started without a model run on Sonnet instead of inheriting Opus
@@ -34,7 +34,7 @@ const DEFAULTS = {
 };
 
 function dataDir() {
-  const dir = process.env.CLAUDE_PLUGIN_DATA || path.join(os.homedir(), '.token-diet');
+  const dir = process.env.CLAUDE_PLUGIN_DATA || path.join(os.homedir(), '.meno');
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -44,11 +44,11 @@ function config() {
   if (cfgCache) return cfgCache;
   let user = {};
   // Skill commands may run without CLAUDE_PLUGIN_DATA: then look in the plugin data dirs too.
-  const base = path.join(os.homedir(), '.claude', 'plugins', 'data');
+  const base = path.join(process.env.MENO_HOME || os.homedir(), '.claude', 'plugins', 'data');
+  // The data dirs of the old name (token-diet) are read too, so a config written before
+  // the rename keeps working.
   let dirs = [dataDir()];
-  if (!process.env.CLAUDE_PLUGIN_DATA) {
-    try { dirs = dirs.concat(fs.readdirSync(base).filter((d) => /^token-diet(-|$)/.test(d)).map((d) => path.join(base, d))); } catch {}
-  }
+  try { dirs = dirs.concat(fs.readdirSync(base).filter((d) => /^(meno|token-diet)(-|$)/.test(d)).map((d) => path.join(base, d))); } catch {}
   for (const d of dirs) {
     try { user = JSON.parse(fs.readFileSync(path.join(d, 'config.json'), 'utf8')); break; } catch {}
   }
@@ -61,7 +61,7 @@ function config() {
     if (Array.isArray(d) ? !Array.isArray(v) : typeof v !== typeof d) cfgCache[k] = d;
   }
   if (!cfgCache.lang) {
-    const env = process.env.TOKEN_DIET_LANG;
+    const env = (process.env.MENO_LANG || process.env.TOKEN_DIET_LANG);
     let loc = '';
     try { loc = Intl.DateTimeFormat().resolvedOptions().locale || ''; } catch {}
     cfgCache.lang = env || (loc.toLowerCase().startsWith('it') ? 'it' : 'en');
@@ -297,8 +297,8 @@ function hasProblem(text) {
 // hide a repeat. Any different outcome in between resets the count, so the same test
 // run three times hours apart is not a loop. Returns a note every loopAfter repeats.
 const LOOP_MSG = {
-  it: (n) => `[token-diet] Claude ha ottenuto lo stesso risultato ${n} volte: gli ho chiesto di cambiare strategia.`,
-  en: (n) => `[token-diet] Claude got the same result ${n} times: asked it to change strategy.`,
+  it: (n) => `[meno] Claude ha ottenuto lo stesso risultato ${n} volte: gli ho chiesto di cambiare strategia.`,
+  en: (n) => `[meno] Claude got the same result ${n} times: asked it to change strategy.`,
 };
 
 function checkLoop(input, sig) {
@@ -312,7 +312,7 @@ function checkLoop(input, sig) {
   if (n < cfg.loopAfter || n % cfg.loopAfter) return null;
   logEvent(input, 'loop', 0, { tool: input.tool_name, repeats: n });
   return {
-    model: `[token-diet] This is the ${n}th time in a row this ${input.tool_name} call ends with the same result. ` +
+    model: `[meno] This is the ${n}th time in a row this ${input.tool_name} call ends with the same result. ` +
       'Retrying the same approach is not working. Stop and change strategy: re-read the error, ' +
       'check your assumptions, try a different method, or ask the user.',
     user: (LOOP_MSG[config().lang] || LOOP_MSG.en)(n),
@@ -328,16 +328,28 @@ function breakLoop(input) {
 // Handoff notes live outside the project, so a cloned repo cannot ship one that
 // gets loaded as trusted context. Fixed location (not CLAUDE_PLUGIN_DATA) because
 // the skill that writes the note and the hook that reads it see different env.
+// ~/.claude/meno: handoff notes and the error memory. The folder of the old name
+// (token-diet, up to 0.8.1) is moved here the first time it is needed.
+function homeDir() {
+  const dir = path.join(os.homedir(), '.claude', 'meno');
+  const old = path.join(os.homedir(), '.claude', 'token-diet');
+  if (!fs.existsSync(dir) && fs.existsSync(old)) {
+    try { fs.renameSync(old, dir); } catch (e) { logError('homeDir', e); }
+  }
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 function handoffFile(cwd) {
   let key = path.resolve(cwd || process.cwd());
   if (process.platform === 'win32') key = key.toLowerCase();
-  const dir = path.join(os.homedir(), '.claude', 'token-diet', 'handoff');
+  const dir = path.join(homeDir(), 'handoff');
   fs.mkdirSync(dir, { recursive: true });
   return path.join(dir, hash(key) + '.md');
 }
 
 module.exports = {
   VERSION, config, dataDir, readStdin, out, tokens, logError, logEvent, writeJSON, loadState, saveState, resetState, mainOf,
-  versionAtLeast, family, costOf, mainModel, cacheTtl, hash,
+  versionAtLeast, family, costOf, mainModel, cacheTtl, homeDir, hash,
   resolvePath, normPath, isProtected, outDir, savedOutput, maskSecrets, cleanDir, hasProblem, checkLoop, breakLoop, handoffFile,
 };

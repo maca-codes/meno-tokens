@@ -79,7 +79,7 @@ function deny(reason, kind, savedChars) {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'deny',
-      permissionDecisionReason: '[token-diet] ' + reason,
+      permissionDecisionReason: '[meno] ' + reason,
     },
   });
 }
