@@ -135,7 +135,7 @@ Create `config.json` in the plugin data folder (`~/.claude/plugins/data/token-di
 
 `keepOutputsDays` sets how long saved full outputs are kept. `cacheTtlMinutes` is the prompt cache lifetime used for the pause warning when Claude Code's `CLAUDE_CODE_PROMPT_CACHE_TTL` is not set (`0` turns it off).
 
-`modelHint`: `"both"`, `"down"` (only Opus to Sonnet) or `false`. `delegateHint: false` removes the session-start instruction. `agentModel: "on"` routes general-purpose subagents without a model to Sonnet; it uses a `PreToolUse` hook that approves that Agent call. `readGuard: true` brings back the read guards.
+`modelHint`: `"both"`, `"down"` (only Opus to Sonnet) or `false`. `delegateHint: false` removes the session-start instruction. `agentModel: "on"` routes general-purpose subagents without a model to Sonnet; it only changes the model, your permission rules for Agent still apply. `readGuard: true` brings back the read guards.
 
 ## Privacy
 

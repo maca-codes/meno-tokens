@@ -23,10 +23,10 @@ if (main && !/opus|fable|mythos/i.test(main)) lib.out(null);
 lib.logEvent(input, 'route', 0, { to: 'sonnet' });
 lib.out({
   systemMessage: MSG[cfg.lang] || MSG.en,
+  // No permissionDecision: the call is not approved here, so the user's own permission
+  // rules for Agent still decide. updatedInput alone is applied (tested on Claude Code 2.1.302).
   hookSpecificOutput: {
     hookEventName: 'PreToolUse',
-    permissionDecision: 'allow',
-    permissionDecisionReason: 'token-diet: default model for a general-purpose subagent',
     updatedInput: Object.assign({}, ti, { model: 'sonnet' }),
   },
 });

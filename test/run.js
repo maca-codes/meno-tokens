@@ -372,7 +372,7 @@ test('subagent model: off by default; when on, a general-purpose agent with no m
   assert.strictEqual(run('agent.js', agentIn('a1', ti)), null);
   withConfig({ agentModel: 'on' }, () => {
     const o = run('agent.js', agentIn('a1', ti)).hookSpecificOutput;
-    assert.strictEqual(o.permissionDecision, 'allow');
+    assert.strictEqual(o.permissionDecision, undefined, 'never approves the call: user permission rules still apply');
     assert.deepStrictEqual(o.updatedInput, Object.assign({}, ti, { model: 'sonnet' }), 'all original fields kept');
     assert.strictEqual(run('agent.js', agentIn('a1', Object.assign({}, ti, { model: 'haiku' }))), null, 'explicit model kept');
     assert.strictEqual(run('agent.js', agentIn('a1', { prompt: 'p', subagent_type: 'Explore' })), null, 'other agent types kept');
