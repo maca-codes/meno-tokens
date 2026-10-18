@@ -9,7 +9,7 @@ const path = require('path');
 // feature that stops working shows up in the report instead of looking like "nothing to do".
 process.on('uncaughtException', (e) => { logError(path.basename(process.argv[1] || 'hook'), e); process.exit(0); });
 
-const VERSION = '0.8.0';
+const VERSION = '0.8.1';
 
 const DEFAULTS = {
   lang: null,                 // 'it' | 'en' | null (auto from system locale)

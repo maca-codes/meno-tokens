@@ -4,7 +4,7 @@
 
 No proxy, no server, no background process. Just a few hooks and Node.js.
 
-![version](https://img.shields.io/badge/version-0.8.0-blue) ![license](https://img.shields.io/badge/license-MIT-green) ![node](https://img.shields.io/badge/requires-Node.js-339933) ![tests](https://img.shields.io/badge/tests-48%20passing-brightgreen)
+![version](https://img.shields.io/badge/version-0.8.1-blue) ![license](https://img.shields.io/badge/license-MIT-green) ![node](https://img.shields.io/badge/requires-Node.js-339933) ![tests](https://img.shields.io/badge/tests-48%20passing-brightgreen)
 
 ```
 claude plugin marketplace add maca-codes/token-diet

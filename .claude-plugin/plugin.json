@@ -1,6 +1,6 @@
 {
   "name": "token-diet",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Cuts Claude Code token waste without a proxy: trims long tool output, sends searches and long reads to light subagents, warns when the context gets heavy and restarts sessions from a short handoff. Reports what it saved, subagent costs included.",
   "author": { "name": "MaCa" },
   "license": "MIT",
