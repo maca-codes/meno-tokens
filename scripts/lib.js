@@ -5,10 +5,11 @@ const os = require('os');
 const path = require('path');
 
 // A hook must never break Claude Code: on any unexpected error, exit quietly and
-// let the tool result through unchanged.
-process.on('uncaughtException', () => process.exit(0));
+// let the tool result through unchanged. The error is written to errors.log, so a
+// feature that stops working shows up in the report instead of looking like "nothing to do".
+process.on('uncaughtException', (e) => { logError(path.basename(process.argv[1] || 'hook'), e); process.exit(0); });
 
-const VERSION = '0.7.0';
+const VERSION = '0.8.0';
 
 const DEFAULTS = {
   lang: null,                 // 'it' | 'en' | null (auto from system locale)
@@ -22,7 +23,10 @@ const DEFAULTS = {
   contextWarnAt: [80000, 150000, 250000, 400000],
   handoffMaxAgeHours: 48,
   hygieneExtraFiles: [],      // more files read at every session start, measured by /token-diet:hygiene
-  modelHint: true,           // suggest Sonnet when the first request on Opus looks simple
+  modelHint: 'both',         // first request: 'both' (Opus->Sonnet if simple, Sonnet->Opus if hard), 'down', or false
+  delegateHint: true,        // at session start, ask Claude to delegate searches and long reads to a light subagent
+  agentModel: 'off',         // 'on': subagents started without a model run on Sonnet instead of inheriting Opus
+  readGuard: false,          // true: block whole reads of big files and unchanged re-reads (one "are you sure" each)
   loopAfter: 3,              // same failure (or same command + output) this many times in a row = loop
   neverTrim: [],             // folders ("~" allowed) whose files are never trimmed or blocked, e.g. notes read at startup
   keepOutputsDays: 7,        // saved full outputs and session files older than this are deleted
@@ -53,7 +57,7 @@ function config() {
   // A wrong type in config.json falls back to the default instead of crashing a hook.
   for (const k of Object.keys(DEFAULTS)) {
     const d = DEFAULTS[k], v = cfgCache[k];
-    if (d === null || v === d) continue;
+    if (d === null || v === d || k === 'modelHint') continue;
     if (Array.isArray(d) ? !Array.isArray(v) : typeof v !== typeof d) cfgCache[k] = d;
   }
   if (!cfgCache.lang) {
@@ -84,6 +88,18 @@ function out(obj) {
 // ~4 chars per token: rough but stable, and the same estimate everywhere.
 const tokens = (chars) => Math.round(chars / 4);
 
+// Internal errors of the hooks, one line each, capped so it never grows big.
+function logError(where, e) {
+  try {
+    const file = path.join(dataDir(), 'errors.log');
+    const line = `${new Date().toISOString()} ${where} ${String((e && e.stack) || e).split('\n').slice(0, 3).join(' | ')}\n`;
+    fs.appendFileSync(file, line);
+    if (fs.statSync(file).size > 200 * 1024) {
+      fs.writeFileSync(file, fs.readFileSync(file, 'utf8').split('\n').slice(-500).join('\n'));
+    }
+  } catch {}
+}
+
 function logEvent(input, kind, savedChars, extra) {
   try {
     const row = Object.assign({
@@ -95,21 +111,26 @@ function logEvent(input, kind, savedChars, extra) {
       v: VERSION,
     }, extra || {});
     fs.appendFileSync(path.join(dataDir(), 'events.jsonl'), JSON.stringify(row) + '\n');
-  } catch {}
+  } catch (e) { logError('logEvent', e); }
 }
 
 // Write to a temp file, then rename: a reader never sees half a file, and a crash
-// mid-write leaves the old file intact.
+// mid-write leaves the old file intact. On Windows the rename can fail for a moment
+// (EPERM/EBUSY while another hook or an antivirus holds the file): retried briefly.
+const pause = (ms) => { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch {} };
 function writeJSON(file, data, pretty) {
   const tmp = file + '.tmp-' + process.pid;
-  try {
-    fs.writeFileSync(tmp, JSON.stringify(data, null, pretty ? 1 : 0));
-    fs.renameSync(tmp, file);
-    return true;
-  } catch {
-    try { fs.unlinkSync(tmp); } catch {}
-    return false;
+  let err;
+  for (let i = 0; i < 3; i++) {
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(data, null, pretty ? 1 : 0));
+      fs.renameSync(tmp, file);
+      return true;
+    } catch (e) { err = e; pause(15 * (i + 1)); }
   }
+  try { fs.unlinkSync(tmp); } catch {}
+  logError('writeJSON ' + path.basename(file), err);
+  return false;
 }
 
 // Per-session state (reads seen, warnings given, pending confirmations).
@@ -131,11 +152,79 @@ function loadState(input) {
 }
 
 function saveState(input, st) {
-  try { writeJSON(stateFile(input), st); } catch {}
+  try { writeJSON(stateFile(input), st); } catch (e) { logError('saveState', e); }
 }
 
+// After /clear or compaction the earlier reads leave the context, but the trimmed
+// outputs saved on disk can still be opened: their savings and the model name stay,
+// so a later read of a saved output is still taken back from the report.
 function resetState(input) {
+  const st = loadState(input);
+  const keep = { trims: st.trims, model: st.model, modelHinted: st.modelHinted };
   try { fs.unlinkSync(stateFile(input)); } catch {}
+  if (keep.trims || keep.model) saveState(input, keep);
+}
+
+// Trims are remembered on the main session, so a subagent that opens a saved output
+// takes its saving back too.
+const mainOf = (input) => ({ session_id: input.session_id, cwd: input.cwd });
+
+// "0.10" > "0.7": compared as numbers, part by part.
+function versionAtLeast(v, min) {
+  const a = String(v || '0').split('.').map(Number), b = String(min).split('.').map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+  }
+  return true;
+}
+
+// $ per million tokens: input, output, cache read. Cache writes cost 1.25x input
+// (5 minutes) or 2x input (1 hour). Source: Anthropic price list, October 2026.
+const PRICES = { fable: [10, 50, 0.25], mythos: [10, 50, 0.25], opus: [4, 20, 0.2], sonnet: [2, 10, 0.2], haiku: [0.1, 0.5, 0.01] };
+function family(model) {
+  const m = /(fable|mythos|opus|sonnet|haiku)/i.exec(String(model || ''));
+  return m ? m[1].toLowerCase() : null;
+}
+
+// Cost in $ of one API usage object on a model family; null when the model is unknown.
+function costOf(model, u) {
+  const p = PRICES[family(model)];
+  if (!p || !u) return null;
+  const cc = u.cache_creation || {};
+  const w1h = cc.ephemeral_1h_input_tokens || 0;
+  const w5m = cc.ephemeral_5m_input_tokens != null ? cc.ephemeral_5m_input_tokens : (u.cache_creation_input_tokens || 0) - w1h;
+  return ((u.input_tokens || 0) * p[0] + (u.output_tokens || 0) * p[1] + (u.cache_read_input_tokens || 0) * p[2] +
+    w5m * p[0] * 1.25 + w1h * p[0] * 2) / 1e6;
+}
+
+// Model of the main conversation: from SessionStart when Claude Code gave it, otherwise
+// from the last main-thread reply in the transcript. null when unknown.
+function mainModel(input) {
+  const st = loadState(mainOf(input));
+  if (st.model) return st.model;
+  let fd;
+  try {
+    fd = fs.openSync(input.transcript_path, 'r');
+    const size = fs.fstatSync(fd).size, len = Math.min(size, 512 * 1024);
+    const buf = Buffer.alloc(len);
+    fs.readSync(fd, buf, 0, len, size - len);
+    const lines = buf.toString('utf8').split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (!lines[i].includes('"model"')) continue;
+      let j;
+      try { j = JSON.parse(lines[i]); } catch { continue; }
+      if (j.type === 'assistant' && !j.isSidechain && j.message && j.message.model) return j.message.model;
+    }
+  } catch {} finally { if (fd !== undefined) try { fs.closeSync(fd); } catch {} }
+  return null;
+}
+
+// Minutes after which the prompt cache has expired: Claude Code's own setting wins.
+function cacheTtl(cfg) {
+  if (process.env.FORCE_PROMPT_CACHING_5M === '1') return 5;
+  const m = /^(\d+)\s*([mh])$/i.exec(String(process.env.CLAUDE_CODE_PROMPT_CACHE_TTL || '').trim());
+  if (m) return Number(m[1]) * (m[2].toLowerCase() === 'h' ? 60 : 1);
+  return cfg.cacheTtlMinutes;
 }
 
 const hash = (s) => require('crypto').createHash('sha1').update(s).digest('hex').slice(0, 12);
@@ -248,6 +337,7 @@ function handoffFile(cwd) {
 }
 
 module.exports = {
-  VERSION, config, dataDir, readStdin, out, tokens, logEvent, writeJSON, loadState, saveState, resetState, hash,
+  VERSION, config, dataDir, readStdin, out, tokens, logError, logEvent, writeJSON, loadState, saveState, resetState, mainOf,
+  versionAtLeast, family, costOf, mainModel, cacheTtl, hash,
   resolvePath, normPath, isProtected, outDir, savedOutput, maskSecrets, cleanDir, hasProblem, checkLoop, breakLoop, handoffFile,
 };

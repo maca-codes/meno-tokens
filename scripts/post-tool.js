@@ -125,41 +125,46 @@ function saveFull(input, text) {
 }
 
 function note(file, before, after) {
-  return `\n[token-diet] Output trimmed, ~${lib.tokens(before - after)} tokens saved. ` +
-    `Full output: ${file} (Grep it, or Read with offset/limit).`;
+  return `\n[token-diet] Trimmed ~${lib.tokens(before - after)} tokens. Full output: ${file} (Grep it or Read a range).`;
 }
 
 const wantsFull = (cmd) => /#\s*full\s*$/m.test(cmd || '');
 
-// Remembers each trim, so a later read of the saved file can take the saving back.
+// Remembers each trim on the main session, so a later read of the saved file (also by
+// a subagent, or after /clear) can take the saving back.
 function rememberTrim(input, file, saved) {
-  const st = lib.loadState(input);
+  const main = lib.mainOf(input);
+  const st = lib.loadState(main);
   st.trims = st.trims || {};
   st.trims[path.basename(file)] = saved;
   const names = Object.keys(st.trims);
-  if (names.length > 50) delete st.trims[names[0]];
-  lib.saveState(input, st);
+  if (names.length > 200) delete st.trims[names[0]];
+  lib.saveState(main, st);
 }
 
 // The model opened a saved output again: what it reads now is no longer saved.
 function readBack(input, name, chars) {
-  const st = lib.loadState(input);
+  const main = lib.mainOf(input);
+  const st = lib.loadState(main);
   const saved = (st.trims || {})[name];
   if (!saved) return;
   const back = Math.min(saved, chars);
   st.trims[name] = saved - back;
-  lib.saveState(input, st);
+  lib.saveState(main, st);
   lib.logEvent(input, 'readback', -back, { file: name });
 }
 
 const input = lib.readStdin();
-const cfg = lib.config();
 const tool = input.tool_name;
 const res = input.tool_response;
 
 // A success may be a step towards fixing an earlier failure, or the fix itself.
 // The error memory is loaded only when a failure is waiting for its fix.
-if ((lib.loadState(input).cases || []).length) require('./errcache').onSuccess(input);
+// Edit and Write are watched only for that: with no failure waiting, stop here.
+const waiting = (lib.loadState(input).cases || []).length > 0;
+if (waiting) require('./errcache').onSuccess(input);
+if (tool === 'Edit' || tool === 'Write') lib.out(null);
+const cfg = lib.config();
 
 // Same command with the same problem again and again: the model is looping.
 function withLoop(obj, loop) {
@@ -217,6 +222,61 @@ if (tool === 'Grep' && res && typeof res.content === 'string') {
       updatedToolOutput: Object.assign({}, res, { content: t + n }),
     },
   });
+}
+
+// A subagent finished: its real model, tokens and cost go to the report, next to what
+// the same tokens would have cost on the main model. Measured, not estimated up front.
+if ((tool === 'Agent' || tool === 'Task') && res && res.usage) {
+  const main = lib.mainModel(input) || 'opus';
+  const u = res.usage;
+  const cost = lib.costOf(res.resolvedModel, u), onMain = lib.costOf(main, u);
+  lib.logEvent(input, 'delegate', 0, {
+    model: lib.family(res.resolvedModel) || String(res.resolvedModel || '?'),
+    main: lib.family(main) || main,
+    tokens: res.totalTokens || 0,
+    cost: cost === null ? null : +cost.toFixed(5),
+    onMain: onMain === null ? null : +onMain.toFixed(5),
+  });
+}
+
+// Other tools: only the part the model actually reads is trimmed, so the saving is real.
+//   Glob -> filenames (summarised by folder), WebFetch -> result, subagent -> its reply text,
+//   MCP -> the text it returns (a string, or text blocks).
+// Returns { text, put(newText) } or null.
+function readable(tool, r) {
+  const textBlocks = (arr) => {
+    const blocks = Array.isArray(arr) ? arr.filter((b) => b && b.type === 'text' && typeof b.text === 'string') : [];
+    if (!blocks.length) return null;
+    const big = blocks.reduce((a, b) => (b.text.length > a.text.length ? b : a));
+    return { text: big.text, put: (t) => { big.text = t; } };
+  };
+  if (tool === 'Glob' && Array.isArray(r.filenames)) {
+    return { text: r.filenames.join('\n'), list: true, put: (t) => { r.filenames = t.split('\n'); } };
+  }
+  if (tool === 'WebFetch' && typeof r.result === 'string') return { text: r.result, put: (t) => { r.result = t; } };
+  if (tool === 'Agent' || tool === 'Task') return textBlocks(r.content);
+  if (tool.startsWith('mcp__')) {
+    if (typeof r === 'string') return { text: r, whole: true };
+    return textBlocks(Array.isArray(r) ? r : r.content);
+  }
+  return null;
+}
+
+if (res && tool !== 'Bash' && tool !== 'PowerShell' && tool !== 'Grep') {
+  if (lib.isProtected(JSON.stringify(input.tool_input || {}), cfg)) lib.out(null);
+  const copy = typeof res === 'string' ? res : JSON.parse(JSON.stringify(res));
+  const part = readable(tool, copy);
+  if (!part || part.text.length <= cfg.trimMaxChars) lib.out(null);
+  const t = part.list ? listing(part.text, 'find') || headTail(part.text, cfg, cfg.trimMaxChars) : trim(part.text, cfg, '', cfg.trimMaxChars);
+  if (t === null || t.length >= part.text.length) lib.out(null);
+  const file = saveFull(input, part.text);
+  const n = note(file, part.text.length, t.length);
+  const value = part.list ? t + '\n' + n.trim() : t + n;
+  const changed = part.whole ? value : (part.put(value), copy);
+  const saved = part.text.length - value.length;
+  lib.logEvent(input, 'trim', saved, { tool, file: path.basename(file) });
+  rememberTrim(input, file, saved);
+  lib.out({ hookSpecificOutput: { hookEventName: 'PostToolUse', updatedToolOutput: changed } });
 }
 
 lib.out(null);

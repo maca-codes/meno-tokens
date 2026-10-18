@@ -4,7 +4,7 @@
 
 No proxy, no server, no background process. Just a few hooks and Node.js.
 
-![version](https://img.shields.io/badge/version-0.7.0-blue) ![license](https://img.shields.io/badge/license-MIT-green) ![node](https://img.shields.io/badge/requires-Node.js-339933) ![tests](https://img.shields.io/badge/tests-36%20passing-brightgreen)
+![version](https://img.shields.io/badge/version-0.8.0-blue) ![license](https://img.shields.io/badge/license-MIT-green) ![node](https://img.shields.io/badge/requires-Node.js-339933) ![tests](https://img.shields.io/badge/tests-48%20passing-brightgreen)
 
 ```
 claude plugin marketplace add maca-codes/token-diet
@@ -27,17 +27,19 @@ token-diet plugs into the Claude Code hook system. It sits between the tools and
 
 ```mermaid
 flowchart LR
+    S[session starts] --> T[token-diet asks Claude to send<br/>searches and long reads to a light subagent]
     A[Claude calls a tool] --> B{token-diet<br/>before the call}
-    B -- "whole read of a big file,<br/>or a file already in context" --> C[asks for a range or a Grep first]
+    B -- "subagent with no model<br/>(optional)" --> C[runs it on Sonnet instead of Opus]
     B -- ok --> D[tool runs]
     D --> E{token-diet<br/>after the call}
     E -- "output over ~4k tokens" --> F[summarises by type: folders, JSON keys, diff files,<br/>or start, end and error lines; full output saved]
+    E -- "subagent finished" --> J[logs its real model and cost]
     E -- "same error 3 times" --> G[tells Claude to change strategy]
     E -- "error seen and fixed before" --> H[passes the old fix as a hint]
     E -- ok --> I[output goes to Claude unchanged]
 ```
 
-Nothing is ever lost. A trimmed output is saved in full, and the model can Grep it or read any part of it. A blocked read is never a dead end: if the model repeats the same call, it goes through.
+Nothing is ever lost. A trimmed output is saved in full, and the model can Grep it or read any part of it.
 
 ## What it does
 
@@ -45,9 +47,10 @@ Nothing is ever lost. A trimmed output is saved in full, and the model can Grep 
 
 | Feature | What happens |
 |---|---|
-| **Output trimming** | Bash, PowerShell and Grep output over ~4k tokens is cut down, in a way that fits what it is: a file listing is summarised by folder (so nothing in the middle disappears), JSON by its structure, a diff by its files with +/- counts, anything else to the first and last lines plus every error or warning line in between. The full output is saved to a file the model can search, with secrets masked; reading it again is never trimmed. |
-| **Read guard** | A whole read of a file with 800+ lines is turned into a request to Grep or read a range first. If the model insists, the read goes through. |
-| **No re-reads** | A part of a file that is unchanged and already in context is not read again. Edits, `/clear` and compaction reset this; subagents are tracked separately. |
+| **Read through a subagent** | At the start of each session (and after `/clear` or compaction) Claude gets a ~70-token instruction: searches and reads of more than ~3 files go to a light subagent (Explore, or Haiku) that returns only a summary with `file:line` references. Every token read into the main context is sent again with each later message; a summary of 1-2k tokens replaces 40-60k. Claude still plans, edits and verifies itself. |
+| **Output trimming** | Bash, PowerShell and Grep output over ~4k tokens is cut down, in a way that fits what it is: a file listing is summarised by folder (so nothing in the middle disappears), JSON by its structure, a diff by its files with +/- counts, anything else to the first and last lines plus every error or warning line in between. The full output is saved to a file the model can search, with secrets masked; reading it again is never trimmed. The same applies to the parts the model reads of MCP tool results, WebFetch results and subagent replies. |
+| **Subagent model** (optional) | With `"agentModel": "on"`, a general-purpose subagent started without a model runs on Sonnet instead of inheriting Opus. A model chosen in the call or in an agent's definition is never changed. Off by default until your own report shows it pays off. |
+| **Read guard** (optional) | With `"readGuard": true`, a whole read of a file with 800+ lines, or a re-read of an unchanged part already in context, is turned into a request to Grep or read a range first. Off by default: in real use the model repeated almost every blocked read, so the block cost a round trip and saved nothing. |
 | **Loop breaker** | When a tool fails 3 times in a row with the same error, or a command keeps returning the same problem, Claude is told to stop and try another approach. You get a one-line notice. Numbers in errors are ignored, so changing line numbers or timings do not hide a loop; a clean result in between resets the count, and "0 failed" is not a problem. |
 | **Error memory** | When a call fails and the same call later succeeds, the steps in between (8 at most, look-only commands like `ls` or `git status` excluded) are saved as the fix. If the same error appears again, in any project, the fix is given to Claude as a short hint (~100 tokens). Paths and numbers are masked, so the same error in another folder still matches; passwords and tokens are masked before saving. |
 
@@ -55,11 +58,11 @@ Nothing is ever lost. A trimmed output is saved in full, and the model can Grep 
 
 | Feature | What happens |
 |---|---|
-| **Context warnings** | You are warned at 80k, 150k, 250k and 400k tokens of context, and when a pause longer than the cache lifetime (60 minutes by default) means the next message re-sends a big context at full price. The warnings are shown to you only, so they cost nothing. |
-| **Model hint** | If the first request of an Opus session looks simple, you are told you could use Sonnet (`/model sonnet`). Shown once, at the start, because switching later reloads the whole context. |
+| **Context warnings** | You are warned at 80k, 150k, 250k and 400k tokens of context, and when a pause longer than the cache lifetime (Claude Code's own setting, otherwise 60 minutes) means the next message re-sends a big context at full price. The warnings are shown to you only, so they cost nothing. |
+| **Model hint** | If the first request of an Opus session looks simple, you are told you could use Sonnet (`/model sonnet`); if the first request of a Sonnet session is clearly hard (architecture, from scratch, race conditions, a long detailed brief), you are told Opus will need fewer attempts. Shown once, at the start, because switching later reloads the whole context. |
 | **Light restart** | `/token-diet:handoff` writes a short note on where you are. Run `/clear` and the new session loads it automatically: you continue with a few hundred tokens instead of the whole old context. |
-| **Setup hygiene** | `/token-diet:hygiene` measures what every session loads before your first message (CLAUDE.md files, memory, skill descriptions, MCP servers, startup hooks) and lists the skills and servers you never used. With `analyze`, Claude proposes cuts and changes nothing until you agree. |
-| **Proof** | `/token-diet:report` shows net tokens saved per day, loops stopped and errors recognized. Trimmed outputs the model opened again and reads it insisted on are subtracted, so the number is not inflated. |
+| **Setup hygiene** | `/token-diet:hygiene` (runs in its own Sonnet subagent, so the files it reads stay out of your conversation) measures what every session loads before your first message (CLAUDE.md files, memory, skill descriptions, MCP servers, startup hooks) and lists the skills and servers you never used. With `analyze`, Claude proposes cuts and changes nothing until you agree. |
+| **Proof** | `/token-diet:report` shows net tokens saved per day, loops stopped and errors recognized. Trimmed outputs the model opened again (also after `/clear` or from a subagent) are subtracted, so the number is not inflated. It also shows every subagent's real model and cost against the same tokens on the main model, and warns when token-diet itself hit internal errors, so a feature that stopped working does not look like "nothing to do". |
 
 ## Plays well with others
 
@@ -115,7 +118,10 @@ Create `config.json` in the plugin data folder (`~/.claude/plugins/data/token-di
   "readMaxLines": 800,
   "contextWarnAt": [80000, 150000, 250000, 400000],
   "loopAfter": 3,
-  "modelHint": true,
+  "modelHint": "both",
+  "delegateHint": true,
+  "agentModel": "off",
+  "readGuard": false,
   "hygieneExtraFiles": [],
   "neverTrim": [],
   "keepOutputsDays": 7,
@@ -127,7 +133,9 @@ Create `config.json` in the plugin data folder (`~/.claude/plugins/data/token-di
 
 `hygieneExtraFiles` adds files your setup reads at startup to the hygiene count.
 
-`keepOutputsDays` sets how long saved full outputs are kept. `cacheTtlMinutes` is the prompt cache lifetime used for the pause warning (`0` turns it off).
+`keepOutputsDays` sets how long saved full outputs are kept. `cacheTtlMinutes` is the prompt cache lifetime used for the pause warning when Claude Code's `CLAUDE_CODE_PROMPT_CACHE_TTL` is not set (`0` turns it off).
+
+`modelHint`: `"both"`, `"down"` (only Opus to Sonnet) or `false`. `delegateHint: false` removes the session-start instruction. `agentModel: "on"` routes general-purpose subagents without a model to Sonnet; it uses a `PreToolUse` hook that approves that Agent call. `readGuard: true` brings back the read guards.
 
 ## Privacy
 

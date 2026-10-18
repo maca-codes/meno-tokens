@@ -14,6 +14,13 @@ const T = {
     hrow: (n, a, b) => `${n} — contesto prima della ripartenza ${a}, riassunto ~${b} token`,
     unknown: 'non misurato',
     since: (d) => `Dal ${d} è attiva la versione 0.7 (soglie più alte, tagli per tipo di output): i giorni prima non sono confrontabili.`,
+    deleg: 'Lavoro delegato ai subagent',
+    drow: (m, n, tok, c) => `  ${m}: ${n} subagent, ${tok} token, $${c}`,
+    dtot: (c, m, main, s) => `  Costo reale $${c}; gli stessi token su ${main} sarebbero costati ~$${m} (${s}).`,
+    dsave: (x) => `risparmio ~$${x}`, dmore: (x) => `spesa in più ~$${x}`,
+    dnote: 'Stima prudente: non conta il contesto che le letture dei subagent avrebbero aggiunto alla conversazione principale.',
+    routed: (n) => `Subagent spostati su Sonnet in automatico: ${n}.`,
+    errors: (n) => `Attenzione: ${n} errori interni di token-diet in questo periodo (dettagli in errors.log). Alcune funzioni potrebbero non aver lavorato.`,
     note: 'Stima: 1 token ogni 4 caratteri. Il risparmio è netto: "Riaperti" = output tagliati che Claude ha poi riletto dal file salvato, e "Ripensamenti" = letture bloccate e poi ripetute; quel che hanno riletto è già tolto. "Cicli fermati" = lo stesso tentativo fallito 3 volte di fila: risparmio non stimato. "Errori riconosciuti" = errori già risolti in passato, soluzione passata a Claude.',
   },
   en: {
@@ -23,6 +30,13 @@ const T = {
     hrow: (n, a, b) => `${n} — context before the restart ${a}, handoff ~${b} tokens`,
     unknown: 'not measured',
     since: (d) => `Version 0.7 is active since ${d} (higher thresholds, trimming by output type): earlier days are not comparable.`,
+    deleg: 'Work delegated to subagents',
+    drow: (m, n, tok, c) => `  ${m}: ${n} ${n === 1 ? 'subagent' : 'subagents'}, ${tok} tokens, $${c}`,
+    dtot: (c, m, main, s) => `  Real cost $${c}; the same tokens on ${main} would have cost ~$${m} (${s}).`,
+    dsave: (x) => `saving ~$${x}`, dmore: (x) => `extra spend ~$${x}`,
+    dnote: 'Conservative: it does not count the context that the subagents\' reads would have added to the main conversation.',
+    routed: (n) => `Subagents moved to Sonnet automatically: ${n}.`,
+    errors: (n) => `Warning: ${n} internal token-diet errors in this period (details in errors.log). Some features may not have worked.`,
     note: 'Estimate: 1 token per 4 characters. The saving is net: "Reopened" = trimmed outputs Claude then read again from the saved file, and "Overrides" = blocked reads the model repeated; what they read is already taken back. "Loops stopped" = the same failed attempt 3 times in a row; saving not estimated. "Known errors" = errors fixed before, earlier fix passed to Claude.',
   },
 };
@@ -54,11 +68,14 @@ if (!rows.length) { console.log(L.none); process.exit(0); }
 const KEYS = ['trim', 'readback', 'bigread', 'reread', 'override', 'loop', 'errhit'];
 const empty = () => Object.assign({ saved: 0 }, ...KEYS.map((k) => ({ [k]: 0 })));
 const byDay = {};
-const hand = [];
+const hand = [], deleg = [];
+let routed = 0;
 for (const r of rows) {
   const d = r.ts.slice(0, 10);
   const b = byDay[d] || (byDay[d] = empty());
   if (r.kind === 'handoff') { hand.push(r); continue; }
+  if (r.kind === 'delegate') { deleg.push(r); continue; }
+  if (r.kind === 'route') { routed++; continue; }
   b[r.kind] = (b[r.kind] || 0) + 1;
   b.saved += r.saved || 0;
 }
@@ -83,6 +100,34 @@ if (hand.length) {
 }
 
 // Days before 0.7 used other thresholds: say so when both are in the table.
-const first07 = rows.filter((r) => r.v && r.v >= '0.7').map((r) => r.ts.slice(0, 10)).sort()[0];
+// Subagents: measured cost per model, against the same tokens on the main model.
+if (deleg.length) {
+  const by = {};
+  let cost = 0, onMain = 0;
+  for (const r of deleg) {
+    const b = by[r.model] || (by[r.model] = { n: 0, tok: 0, cost: 0 });
+    b.n++; b.tok += r.tokens || 0; b.cost += r.cost || 0;
+    cost += r.cost || 0; onMain += r.onMain != null ? r.onMain : r.cost || 0;
+  }
+  const usd = (x) => x.toFixed(x < 1 ? 3 : 2);
+  const mains = [...new Set(deleg.map((r) => r.main).filter(Boolean))].join('/') || 'Opus';
+  console.log(`\n${L.deleg}:`);
+  for (const [m, b] of Object.entries(by)) console.log(L.drow(m, b.n, fmt(b.tok), usd(b.cost)));
+  const diff = onMain - cost;
+  console.log(L.dtot(usd(cost), usd(onMain), mains, diff >= 0 ? L.dsave(usd(diff)) : L.dmore(usd(-diff))));
+  console.log(`  ${L.dnote}`);
+}
+if (routed) console.log('\n' + L.routed(routed));
+
+// Internal errors of the hooks in the same period: a feature that failed is not "nothing to do".
+let errs = 0;
+for (const d of new Set(dirs())) {
+  try {
+    errs += fs.readFileSync(path.join(d, 'errors.log'), 'utf8').split('\n').filter((l) => Date.parse(l.slice(0, 24)) >= since).length;
+  } catch {}
+}
+if (errs) console.log('\n' + L.errors(errs));
+
+const first07 = rows.filter((r) => r.v && lib.versionAtLeast(r.v, '0.7')).map((r) => r.ts.slice(0, 10)).sort()[0];
 if (first07 && rows.some((r) => !r.v)) console.log('\n' + L.since(first07));
 console.log('\n' + L.note);

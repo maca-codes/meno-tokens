@@ -42,32 +42,48 @@ const CACHE_MSG = {
     'If you are switching topic, restart light: /token-diet:handoff, then /clear.',
 };
 
-// First request of a session on Opus that looks simple (short question, nothing to
-// build or fix): suggest Sonnet. Only once and only at the start, because switching
+// First request of a session: the right model for what follows. Opus on something
+// simple: suggest Sonnet. Sonnet or Haiku on something clearly hard: suggest Opus, which
+// gets it right in fewer attempts. Only once and only at the start, because switching
 // model later re-sends the whole context without cache and costs more.
+// Shown to the user only (systemMessage): it costs the model nothing.
 const MODEL_MSG = {
   it: 'token-diet: richiesta semplice. Se la sessione resta su cose così, passa ora a Sonnet con /model sonnet: ' +
     'costa meno. Più avanti conviene meno, perché il cambio fa ricaricare tutto il contesto. Per lavori complessi torna a Opus.',
   en: 'token-diet: simple request. If this session stays on things like this, switch to Sonnet now with /model sonnet: ' +
     'it costs less. Later it pays off less, because switching re-sends the whole context. Go back to Opus for complex work.',
 };
+const UP_MSG = {
+  it: 'token-diet: richiesta complessa. Per lavori così Opus sbaglia meno e fa meno tentativi: passa ora con /model opus ' +
+    '(più avanti il cambio costa di più, perché ricarica tutto il contesto).',
+  en: 'token-diet: complex request. For work like this Opus makes fewer mistakes and retries: switch now with /model opus ' +
+    '(later the switch costs more, because it re-sends the whole context).',
+};
 const BUILD = /```|implement|crea|costruis|svilupp|aggiung|modific|refactor|riscriv|debug|bug|error|non funziona|progett|plugin|sito|app\b|gioco|migr|deploy|build|test|codice|script|funzion|feature|create|develop|\badd\b|rewrite|\bfix|project|website|\bcode/i;
+// Only strong signals: a long, detailed brief, or work known to need deep reasoning.
+const HARD = /architett|architect|da zero|from scratch|refactor\w*\s+(?:complet|intero|tutto|whole|entire)|riscriv\w*\s+(?:tutto|intero)|race condition|deadlock|memory leak|concorrenz|concurren|vulnerab|security audit|audit di sicurezza|migra\w*\s+(?:da|a|from|to)\b|ottimizz\w*\s+(?:le\s+)?prestazioni|performance (?:issue|problem)|perché non funziona|why (?:does|is) .* not work/i;
 
 function simplePrompt(p) {
   p = String(p || '').trim();
   return p.length > 0 && p.length <= 300 && !p.startsWith('/') && !BUILD.test(p);
 }
+function hardPrompt(p) {
+  p = String(p || '').trim();
+  return !p.startsWith('/') && (p.length > 800 || HARD.test(p));
+}
 
 const input = lib.readStdin();
 const cfg = lib.config();
 const used = contextTokens(input.transcript_path);
+const hint = cfg.modelHint === true ? 'both' : cfg.modelHint;
 
-if (!used && cfg.modelHint) {
+if (!used && (hint === 'both' || hint === 'down')) {
   const st = lib.loadState(input);
-  if (!st.modelHinted && /opus/i.test(st.model || '')) {
+  if (!st.modelHinted && st.model) {
     st.modelHinted = true;
     lib.saveState(input, st);
-    if (simplePrompt(input.prompt)) lib.out({ systemMessage: MODEL_MSG[cfg.lang] || MODEL_MSG.en });
+    if (/opus|fable|mythos/i.test(st.model) && simplePrompt(input.prompt)) lib.out({ systemMessage: MODEL_MSG[cfg.lang] || MODEL_MSG.en });
+    if (hint === 'both' && /sonnet|haiku/i.test(st.model) && hardPrompt(input.prompt)) lib.out({ systemMessage: UP_MSG[cfg.lang] || UP_MSG.en });
   }
 }
 if (!used) lib.out(null);
@@ -84,7 +100,8 @@ const msgs = [];
 // A pause longer than the prompt cache lifetime: the next message re-sends the whole
 // context at full price. Told to the user only (costs nothing), and only when it is big.
 const now = Date.now();
-if (cfg.cacheTtlMinutes > 0 && st.lastPrompt && now - st.lastPrompt > cfg.cacheTtlMinutes * 60e3 && used >= 30000) {
+const ttl = lib.cacheTtl(cfg);
+if (ttl > 0 && st.lastPrompt && now - st.lastPrompt > ttl * 60e3 && used >= 30000) {
   msgs.push((CACHE_MSG[cfg.lang] || CACHE_MSG.en)(Math.round((now - st.lastPrompt) / 60e3), Math.round(used / 1000)));
 }
 st.lastPrompt = now;

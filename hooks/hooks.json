@@ -1,10 +1,11 @@
 {
   "hooks": {
     "PreToolUse": [
-      { "matcher": "Read", "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pre-tool.js\"", "timeout": 10 } ] }
+      { "matcher": "Read", "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pre-tool.js\"", "timeout": 10 } ] },
+      { "matcher": "Agent|Task", "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/agent.js\"", "timeout": 10 } ] }
     ],
     "PostToolUse": [
-      { "matcher": "Bash|PowerShell|Grep|Edit|Write", "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/post-tool.js\"", "timeout": 10 } ] }
+      { "matcher": "Bash|PowerShell|Grep|Glob|Edit|Write|WebFetch|WebSearch|Agent|Task|mcp__.*", "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/post-tool.js\"", "timeout": 10 } ] }
     ],
     "PostToolUseFailure": [
       { "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/failure.js\"", "timeout": 10 } ] }
@@ -13,7 +14,7 @@
       { "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/prompt.js\"", "timeout": 10 } ] }
     ],
     "SessionStart": [
-      { "matcher": "startup|clear|compact", "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-start.js\"", "timeout": 10 } ] }
+      { "matcher": "startup|clear|compact|resume", "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-start.js\"", "timeout": 10 } ] }
     ]
   }
 }

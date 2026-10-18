@@ -41,18 +41,26 @@ function allow() {
 }
 
 // A saved full output: the model chose to open it, so it is never blocked, and what
-// it reads is no longer a saving.
+// it reads is no longer a saving (trims live on the main session, see post-tool.js).
 const back = lib.savedOutput(p);
 if (back) {
-  const saved = (st.trims || {})[back];
+  const main = lib.mainOf(input);
+  const ms = lib.loadState(main);
+  const saved = (ms.trims || {})[back];
   if (saved) {
     const chars = limit ? Math.min(s.size, limit * 80) : s.size;
     const take = Math.min(saved, chars);
-    st.trims[back] = saved - take;
+    ms.trims[back] = saved - take;
+    lib.saveState(main, ms);
     lib.logEvent(input, 'readback', -take, { file: back });
   }
-  allow();
+  if (cfg.readGuard) allow();
+  lib.out(null);
 }
+
+// The guards below are off by default: in real use the model repeated nearly every
+// blocked read, so a block cost one extra round trip and saved nothing.
+if (!cfg.readGuard) lib.out(null);
 
 // Second identical call: the model insists, let it through.
 // The saving logged at deny time is taken back, so the report stays honest.

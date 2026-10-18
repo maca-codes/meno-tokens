@@ -4,7 +4,11 @@ description: Measure the fixed context every session loads (instructions, memory
 disable-model-invocation: true
 allowed-tools: Bash(node:*), Read
 argument-hint: "[days] [analyze]"
+context: fork
+model: sonnet
 ---
+
+You run in a separate subagent so the files you read stay out of the main conversation. Your final message is what the user gets: put the whole answer in it.
 
 !`node "${CLAUDE_SKILL_DIR}/../../scripts/hygiene.js" $ARGUMENTS --files`
 
